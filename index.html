@@ -2,104 +2,512 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<title>Plan coffrage AR - lisible</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Nendaz AR - JSON réel</title>
+
 <script src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
+
 <style>
-html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;touch-action:none}
-video,#arjsVideo{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:1!important}
-.a-canvas,canvas.a-canvas{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
-#hud{position:fixed;left:12px;top:calc(12px + env(safe-area-inset-top));z-index:10;max-width:78vw;background:rgba(10,16,30,.78);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:16px;padding:10px 13px;box-shadow:0 8px 28px rgba(0,0,0,.35);backdrop-filter:blur(8px)}
-#status{display:inline-flex;gap:7px;align-items:center;background:#16a34a;padding:6px 10px;border-radius:999px;font-weight:800;font-size:14px;margin-bottom:6px}
-#status.lost{background:#f97316}.dot{width:10px;height:10px;background:#34d399;border-radius:50%}.lost .dot{background:#ff2d2d}
-#hud b{display:block;font-size:16px;margin-bottom:2px}.small{font-size:13px;color:#e5e7eb;line-height:1.25}
-#gear{position:fixed;right:14px;top:calc(18px + env(safe-area-inset-top));z-index:20;width:56px;height:56px;border:0;border-radius:50%;background:#2563eb;color:white;font-size:26px;font-weight:900;box-shadow:0 8px 28px rgba(0,0,0,.45)}
-#help{position:fixed;left:12px;right:12px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:10;color:#fff;text-align:center;background:rgba(0,0,0,.62);border-radius:14px;padding:10px 12px;font-size:14px}
-#panel{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(10,18,35,.96);color:#fff;border-radius:20px 20px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(0,0,0,.55);transform:translateY(105%);transition:.22s;max-height:74vh;overflow:auto}
-#panel.open{transform:translateY(0)}h2{font-size:19px;margin:0 0 12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{border:0;border-radius:14px;padding:13px 12px;color:white;font-size:16px;font-weight:900;background:#7c3aed}.green{background:#16a34a}.blue{background:#0ea5e9}.orange{background:#f97316}.gray{background:#64748b}
-.row{margin:12px 0}.row label{display:flex;justify-content:space-between;font-size:15px;margin-bottom:5px}.row b{color:#7dd3fc}input[type=range]{width:100%;height:34px}.ghost{opacity:.28}
+  :root {
+    --bg: rgba(15,23,42,.88);
+    --line: rgba(255,255,255,.18);
+    --orange: #f97316;
+    --green: #22c55e;
+    --blue: #2563eb;
+  }
+  html,body {
+    margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:#000;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;
+    touch-action:none;
+  }
+  video,#arjsVideo {
+    position:fixed!important; inset:0!important; width:100vw!important; height:100vh!important;
+    object-fit:cover!important; z-index:1!important;
+  }
+  .a-canvas,canvas.a-canvas {
+    position:fixed!important; inset:0!important; width:100vw!important; height:100vh!important;
+    z-index:2!important; background:transparent!important;
+  }
+  #hud {
+    position:fixed; top:calc(12px + env(safe-area-inset-top)); left:12px; right:86px;
+    z-index:9998; color:#fff; background:var(--bg); border:1px solid var(--line);
+    border-radius:18px; padding:12px 14px; box-shadow:0 10px 30px rgba(0,0,0,.35);
+    backdrop-filter: blur(10px);
+  }
+  #status {
+    display:inline-flex; align-items:center; gap:7px; padding:6px 11px; border-radius:999px;
+    font-weight:800; background:var(--orange); font-size:15px; margin-bottom:8px;
+  }
+  #dot { width:10px; height:10px; border-radius:50%; background:#ef4444; }
+  #status.ok { background:#16a34a; }
+  #status.ok #dot { background:#86efac; }
+  #title { font-size:20px; font-weight:900; line-height:1.05; margin:0 0 8px 0; }
+  #sub { font-size:13px; color:#dbeafe; line-height:1.25; }
+  #stats {
+    display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-top:10px;
+  }
+  .card {
+    background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14);
+    border-radius:12px; padding:8px 10px;
+  }
+  .card b { font-size:17px; display:block; }
+  .card span { font-size:12px; color:#cbd5e1; }
+
+  #gear {
+    position:fixed; top:calc(16px + env(safe-area-inset-top)); right:14px; z-index:10001;
+    width:58px; height:58px; border:none; border-radius:50%; background:#2563eb; color:#fff;
+    font-size:28px; box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  #panel {
+    position:fixed; left:0; right:0; bottom:0; z-index:10000; color:#fff;
+    background:rgba(15,23,42,.96); border-top:1px solid rgba(255,255,255,.16);
+    border-top-left-radius:22px; border-top-right-radius:22px;
+    padding:16px 18px calc(16px + env(safe-area-inset-bottom));
+    transform:translateY(105%); transition:transform .22s ease; max-height:72vh; overflow:auto;
+    box-shadow:0 -10px 30px rgba(0,0,0,.5);
+  }
+  #panel.open { transform:translateY(0); }
+  #panel h2 { margin:0 0 12px 0; font-size:21px; }
+  .grid3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+  button.preset, button.action {
+    border:none; border-radius:14px; padding:12px 10px; color:white; font-weight:900; font-size:15px;
+  }
+  button.preset { background:#7c3aed; }
+  button.action.green { background:#16a34a; }
+  button.action.blue { background:#0ea5e9; }
+  button.action.orange { background:#f97316; }
+  button.action.grey { background:#64748b; }
+  .row { margin:14px 0; }
+  .row label { display:flex; justify-content:space-between; align-items:baseline; font-size:16px; margin-bottom:4px; }
+  .row label b { color:#7dd3fc; font-size:17px; }
+  input[type=range] { width:100%; height:32px; }
+  #hint {
+    position:fixed; left:14px; right:14px; bottom:calc(14px + env(safe-area-inset-bottom));
+    z-index:9997; color:#fff; background:rgba(0,0,0,.55); border-radius:14px; padding:10px 12px;
+    text-align:center; font-size:14px; line-height:1.25; backdrop-filter: blur(8px);
+  }
+  #toast {
+    position:fixed; left:50%; bottom:100px; transform:translateX(-50%);
+    z-index:10002; background:#16a34a; color:#fff; padding:10px 16px; border-radius:12px;
+    opacity:0; transition:opacity .2s; pointer-events:none; font-size:14px; font-weight:800;
+  }
 </style>
 </head>
-<body>
-<div id="hud"><div id="status" class="lost"><span class="dot"></span><span id="stxt">Vise HIRO</span></div><b>Plan coffrage AR</b><div class="small">Le modèle est volontairement bas : lisible comme un plan.</div></div>
-<button id="gear">⚙</button>
-<div id="help">Un doigt : tourner. Deux doigts : zoom. Vise le marqueur A4 à 40–70 cm.</div>
 
-<a-scene embedded vr-mode-ui="enabled:false"
-  renderer="alpha:true;antialias:true;precision:medium;sortObjects:true"
-  arjs="sourceType:webcam;trackingMethod:best;debugUIEnabled:false;detectionMode:mono;">
-  <a-assets timeout="20000">
-    <a-asset-item id="planModel" src="model_plan_lisible_v2.glb"></a-asset-item>
-  </a-assets>
-  <a-marker id="hiro" preset="hiro" smooth="true" smoothCount="5" smoothTolerance="0.015" smoothThreshold="3">
-    <a-entity id="pivot" rotation="0 0 0" scale="1 1 1" position="0 0.012 0">
-      <a-entity id="plan" gltf-model="#planModel" rotation="0 0 0" position="0 0 0" scale="1 1 1"></a-entity>
+<body>
+<script id="nendaz-json" type="application/json">{&quot;_version&quot;:&quot;5.0&quot;,&quot;doc_path&quot;:&quot;C:/Users/User/Downloads/Execution-2.pdf&quot;,&quot;scale&quot;:0.01765480770527236,&quot;page&quot;:0,&quot;zoom&quot;:4.0,&quot;rotation&quot;:0,&quot;items&quot;:[{&quot;id&quot;:&quot;dadfcd8f&quot;,&quot;group_id&quot;:&quot;b18a582d&quot;,&quot;name&quot;:&quot;Voile #001&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,666.75],[473.0,614.5]],&quot;value&quot;:0.922474261635566,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:1,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,922&quot;},{&quot;id&quot;:&quot;8ae028a5&quot;,&quot;group_id&quot;:&quot;b18a582d&quot;,&quot;name&quot;:&quot;Coffrage — Voile #001&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,666.75],[473.0,614.5]],&quot;value&quot;:5.16585586515917,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:1,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,922 × 2,800&quot;},{&quot;id&quot;:&quot;6790f729&quot;,&quot;group_id&quot;:&quot;b18a582d&quot;,&quot;name&quot;:&quot;Volume — Voile #001&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,666.75],[473.0,614.5]],&quot;value&quot;:0.46492702786432527,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:1,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,922 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;ba32b817&quot;,&quot;group_id&quot;:&quot;464ac8f0&quot;,&quot;name&quot;:&quot;Voile #002&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,514.25],[472.75,374.0]],&quot;value&quot;:2.476086780664448,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:2,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,476&quot;},{&quot;id&quot;:&quot;77251045&quot;,&quot;group_id&quot;:&quot;464ac8f0&quot;,&quot;name&quot;:&quot;Coffrage — Voile #002&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,514.25],[472.75,374.0]],&quot;value&quot;:13.86608597172091,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:2,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 2,476 × 2,800&quot;},{&quot;id&quot;:&quot;63095d21&quot;,&quot;group_id&quot;:&quot;464ac8f0&quot;,&quot;name&quot;:&quot;Volume — Voile #002&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,514.25],[472.75,374.0]],&quot;value&quot;:1.2479477374548817,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:2,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,476 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;5aa17941&quot;,&quot;group_id&quot;:&quot;1fee4a2c&quot;,&quot;name&quot;:&quot;Voile #003&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,273.0],[472.75,206.5]],&quot;value&quot;:1.174044712400612,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:3,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,174&quot;},{&quot;id&quot;:&quot;bde08491&quot;,&quot;group_id&quot;:&quot;1fee4a2c&quot;,&quot;name&quot;:&quot;Coffrage — Voile #003&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,273.0],[472.75,206.5]],&quot;value&quot;:6.574650389443426,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:3,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 1,174 × 2,800&quot;},{&quot;id&quot;:&quot;151fd943&quot;,&quot;group_id&quot;:&quot;1fee4a2c&quot;,&quot;name&quot;:&quot;Volume — Voile #003&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[472.75,273.0],[472.75,206.5]],&quot;value&quot;:0.5917185350499083,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:3,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,174 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;7e2f6a3c&quot;,&quot;group_id&quot;:&quot;26205044&quot;,&quot;name&quot;:&quot;Voile #004&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[483.0,216.75],[990.0,216.75]],&quot;value&quot;:8.950987506573087,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:4,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;8,951&quot;},{&quot;id&quot;:&quot;23230356&quot;,&quot;group_id&quot;:&quot;26205044&quot;,&quot;name&quot;:&quot;Coffrage — Voile #004&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[483.0,216.75],[990.0,216.75]],&quot;value&quot;:50.12553003680929,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:4,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 8,951 × 2,800&quot;},{&quot;id&quot;:&quot;2c15f4dd&quot;,&quot;group_id&quot;:&quot;26205044&quot;,&quot;name&quot;:&quot;Volume — Voile #004&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[483.0,216.75],[990.0,216.75]],&quot;value&quot;:4.511297703312835,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:4,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;8,951 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;f1d56590&quot;,&quot;group_id&quot;:&quot;649a0add&quot;,&quot;name&quot;:&quot;Voile #005&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[979.25,328.25],[979.5,216.75]],&quot;value&quot;:1.9685160072279793,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:5,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,969&quot;},{&quot;id&quot;:&quot;feb3310e&quot;,&quot;group_id&quot;:&quot;649a0add&quot;,&quot;name&quot;:&quot;Coffrage — Voile #005&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[979.25,328.25],[979.5,216.75]],&quot;value&quot;:11.023689640476682,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:5,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 1,969 × 2,800&quot;},{&quot;id&quot;:&quot;013336da&quot;,&quot;group_id&quot;:&quot;649a0add&quot;,&quot;name&quot;:&quot;Volume — Voile #005&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[979.25,328.25],[979.5,216.75]],&quot;value&quot;:0.9921320676429014,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:5,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,969 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;1033ac26&quot;,&quot;group_id&quot;:&quot;1e963883&quot;,&quot;name&quot;:&quot;Voile #006&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[989.75,328.25],[1352.75,328.5]],&quot;value&quot;:6.408696716883496,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:6,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;6,409&quot;},{&quot;id&quot;:&quot;2d723711&quot;,&quot;group_id&quot;:&quot;1e963883&quot;,&quot;name&quot;:&quot;Coffrage — Voile #006&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[989.75,328.25],[1352.75,328.5]],&quot;value&quot;:35.88870161454757,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:6,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 6,409 × 2,800&quot;},{&quot;id&quot;:&quot;d6bd6925&quot;,&quot;group_id&quot;:&quot;1e963883&quot;,&quot;name&quot;:&quot;Volume — Voile #006&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[989.75,328.25],[1352.75,328.5]],&quot;value&quot;:3.2299831453092813,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:6,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;6,409 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;6ecf2b33&quot;,&quot;group_id&quot;:&quot;87e5841d&quot;,&quot;name&quot;:&quot;Voile #007&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1342.250177156531,328.49276871704996],[1342.25,886.25]],&quot;value&quot;:9.847096664526099,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:7,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;9,847&quot;},{&quot;id&quot;:&quot;066d0189&quot;,&quot;group_id&quot;:&quot;87e5841d&quot;,&quot;name&quot;:&quot;Coffrage — Voile #007&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1342.250177156531,328.49276871704996],[1342.25,886.25]],&quot;value&quot;:55.14374132134615,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:7,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 9,847 × 2,800&quot;},{&quot;id&quot;:&quot;eab5818e&quot;,&quot;group_id&quot;:&quot;87e5841d&quot;,&quot;name&quot;:&quot;Volume — Voile #007&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1342.250177156531,328.49276871704996],[1342.25,886.25]],&quot;value&quot;:4.962936718921153,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:7,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;9,847 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;567ea88b&quot;,&quot;group_id&quot;:&quot;7b8d7ce8&quot;,&quot;name&quot;:&quot;Voile #008&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1367.25,876.25],[1352.25,876.25]],&quot;value&quot;:0.2648221155790854,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:8,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,265&quot;},{&quot;id&quot;:&quot;7d6d22d1&quot;,&quot;group_id&quot;:&quot;7b8d7ce8&quot;,&quot;name&quot;:&quot;Coffrage — Voile #008&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1367.25,876.25],[1352.25,876.25]],&quot;value&quot;:1.4830038472428781,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:8,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,265 × 2,800&quot;},{&quot;id&quot;:&quot;96a50e83&quot;,&quot;group_id&quot;:&quot;7b8d7ce8&quot;,&quot;name&quot;:&quot;Volume — Voile #008&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1367.25,876.25],[1352.25,876.25]],&quot;value&quot;:0.13347034625185902,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:8,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,265 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;f599fb17&quot;,&quot;group_id&quot;:&quot;29fb80e5&quot;,&quot;name&quot;:&quot;Voile #009&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1342.2500032556359,876.0000001588126],[1292.5,876.0]],&quot;value&quot;:0.8783267408149252,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:9,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,878&quot;},{&quot;id&quot;:&quot;00f8f813&quot;,&quot;group_id&quot;:&quot;29fb80e5&quot;,&quot;name&quot;:&quot;Coffrage — Voile #009&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1342.2500032556359,876.0000001588126],[1292.5,876.0]],&quot;value&quot;:4.918629748563581,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:9,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,878 × 2,800&quot;},{&quot;id&quot;:&quot;38be8a70&quot;,&quot;group_id&quot;:&quot;29fb80e5&quot;,&quot;name&quot;:&quot;Volume — Voile #009&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1342.2500032556359,876.0000001588126],[1292.5,876.0]],&quot;value&quot;:0.4426766773707223,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:9,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,878 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;eb838f83&quot;,&quot;group_id&quot;:&quot;1db79b3e&quot;,&quot;name&quot;:&quot;Voile #010&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1209.0,886.25],[1137.75,886.0]],&quot;value&quot;:1.2579127923135356,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:10,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,258&quot;},{&quot;id&quot;:&quot;10450b01&quot;,&quot;group_id&quot;:&quot;1db79b3e&quot;,&quot;name&quot;:&quot;Coffrage — Voile #010&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1209.0,886.25],[1137.75,886.0]],&quot;value&quot;:7.044311636955799,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:10,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 1,258 × 2,800&quot;},{&quot;id&quot;:&quot;8a67b27d&quot;,&quot;group_id&quot;:&quot;1db79b3e&quot;,&quot;name&quot;:&quot;Volume — Voile #010&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1209.0,886.25],[1137.75,886.0]],&quot;value&quot;:0.6339880473260219,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:10,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,258 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;542ac391&quot;,&quot;group_id&quot;:&quot;129760a8&quot;,&quot;name&quot;:&quot;Voile #011&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1053.75,886.25],[994.25,886.0]],&quot;value&quot;:1.0504703309058199,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:11,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,050&quot;},{&quot;id&quot;:&quot;7f8d362d&quot;,&quot;group_id&quot;:&quot;129760a8&quot;,&quot;name&quot;:&quot;Coffrage — Voile #011&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1053.75,886.25],[994.25,886.0]],&quot;value&quot;:5.882633853072591,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:11,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 1,050 × 2,800&quot;},{&quot;id&quot;:&quot;8bb02176&quot;,&quot;group_id&quot;:&quot;129760a8&quot;,&quot;name&quot;:&quot;Volume — Voile #011&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1053.75,886.25],[994.25,886.0]],&quot;value&quot;:0.5294370467765331,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:11,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,050 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;e38e9635&quot;,&quot;group_id&quot;:&quot;2f080704&quot;,&quot;name&quot;:&quot;Voile #012&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[994.5,875.5],[994.25,666.5]],&quot;value&quot;:3.6898574501748582,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:12,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;3,690&quot;},{&quot;id&quot;:&quot;668bfd4b&quot;,&quot;group_id&quot;:&quot;2f080704&quot;,&quot;name&quot;:&quot;Coffrage — Voile #012&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[994.5,875.5],[994.25,666.5]],&quot;value&quot;:20.663201720979206,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:12,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 3,690 × 2,800&quot;},{&quot;id&quot;:&quot;dd8ee068&quot;,&quot;group_id&quot;:&quot;2f080704&quot;,&quot;name&quot;:&quot;Volume — Voile #012&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[994.5,875.5],[994.25,666.5]],&quot;value&quot;:1.8596881548881286,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:12,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;3,690 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;e3caee91&quot;,&quot;group_id&quot;:&quot;e18a826c&quot;,&quot;name&quot;:&quot;Voile #013&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[930.25,656.75],[1004.75,656.75]],&quot;value&quot;:1.3152831740427908,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:13,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,315&quot;},{&quot;id&quot;:&quot;3d30f02c&quot;,&quot;group_id&quot;:&quot;e18a826c&quot;,&quot;name&quot;:&quot;Coffrage — Voile #013&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[930.25,656.75],[1004.75,656.75]],&quot;value&quot;:7.365585774639628,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:13,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 1,315 × 2,800&quot;},{&quot;id&quot;:&quot;dea45779&quot;,&quot;group_id&quot;:&quot;e18a826c&quot;,&quot;name&quot;:&quot;Volume — Voile #013&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[930.25,656.75],[1004.75,656.75]],&quot;value&quot;:0.6629027197175665,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:13,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,315 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;1b5c9921&quot;,&quot;group_id&quot;:&quot;6e617b22&quot;,&quot;name&quot;:&quot;Voile #014&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[989.75,328.25],[989.75,656.75]],&quot;value&quot;:5.79960433118197,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:14,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;5,800&quot;},{&quot;id&quot;:&quot;feaa4012&quot;,&quot;group_id&quot;:&quot;6e617b22&quot;,&quot;name&quot;:&quot;Coffrage — Voile #014&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[989.75,328.25],[989.75,656.75]],&quot;value&quot;:32.47778425461903,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:14,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 5,800 × 2,800&quot;},{&quot;id&quot;:&quot;a097a4a4&quot;,&quot;group_id&quot;:&quot;6e617b22&quot;,&quot;name&quot;:&quot;Volume — Voile #014&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[989.75,328.25],[989.75,656.75]],&quot;value&quot;:2.9230005829157126,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:14,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;5,800 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;c1cda8ec&quot;,&quot;group_id&quot;:&quot;9bee3d5a&quot;,&quot;name&quot;:&quot;Voile #015&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1357.25,886.25],[1356.75,931.75]],&quot;value&quot;:0.8033422513446892,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:15,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,803&quot;},{&quot;id&quot;:&quot;2320d279&quot;,&quot;group_id&quot;:&quot;9bee3d5a&quot;,&quot;name&quot;:&quot;Coffrage — Voile #015&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1357.25,886.25],[1356.75,931.75]],&quot;value&quot;:4.498716607530259,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:15,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,803 × 2,800&quot;},{&quot;id&quot;:&quot;afca5b64&quot;,&quot;group_id&quot;:&quot;9bee3d5a&quot;,&quot;name&quot;:&quot;Volume — Voile #015&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1357.25,886.25],[1356.75,931.75]],&quot;value&quot;:0.4048844946777233,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:9,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:15,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,803 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;2c73adf1&quot;,&quot;group_id&quot;:&quot;fd54dd36&quot;,&quot;name&quot;:&quot;Voile #016&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1367.0,921.25],[1416.5,921.25]],&quot;value&quot;:0.8739129814109818,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:16,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,874&quot;},{&quot;id&quot;:&quot;44849a55&quot;,&quot;group_id&quot;:&quot;fd54dd36&quot;,&quot;name&quot;:&quot;Coffrage — Voile #016&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1367.0,921.25],[1416.5,921.25]],&quot;value&quot;:4.893912695901498,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:16,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,874 × 2,800&quot;},{&quot;id&quot;:&quot;9933f13d&quot;,&quot;group_id&quot;:&quot;fd54dd36&quot;,&quot;name&quot;:&quot;Volume — Voile #016&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1367.0,921.25],[1416.5,921.25]],&quot;value&quot;:0.44045214263113475,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:16,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,874 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;0cb14bbb&quot;,&quot;group_id&quot;:&quot;e10da063&quot;,&quot;name&quot;:&quot;Voile #017&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1540.5,921.25],[1691.0,921.25]],&quot;value&quot;:2.6570485596434903,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:17,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,657&quot;},{&quot;id&quot;:&quot;02efd36b&quot;,&quot;group_id&quot;:&quot;e10da063&quot;,&quot;name&quot;:&quot;Coffrage — Voile #017&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1540.5,921.25],[1691.0,921.25]],&quot;value&quot;:14.879471934003545,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:17,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 2,657 × 2,800&quot;},{&quot;id&quot;:&quot;5cf9bc25&quot;,&quot;group_id&quot;:&quot;e10da063&quot;,&quot;name&quot;:&quot;Volume — Voile #017&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1540.5,921.25],[1691.0,921.25]],&quot;value&quot;:1.3391524740603191,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:17,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,657 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;4d97e270&quot;,&quot;group_id&quot;:&quot;76f541ca&quot;,&quot;name&quot;:&quot;Voile #018&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1610.5,921.25],[1610.5,703.25]],&quot;value&quot;:3.8487480797493743,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:18,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;3,849&quot;},{&quot;id&quot;:&quot;b3ba83e4&quot;,&quot;group_id&quot;:&quot;76f541ca&quot;,&quot;name&quot;:&quot;Coffrage — Voile #018&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1610.5,921.25],[1610.5,703.25]],&quot;value&quot;:21.552989246596496,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:18,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 3,849 × 2,800&quot;},{&quot;id&quot;:&quot;260135a3&quot;,&quot;group_id&quot;:&quot;76f541ca&quot;,&quot;name&quot;:&quot;Volume — Voile #018&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1610.5,921.25],[1610.5,703.25]],&quot;value&quot;:1.9397690321936847,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:18,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;3,849 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;74481fae&quot;,&quot;group_id&quot;:&quot;f3f1bda2&quot;,&quot;name&quot;:&quot;Voile #019&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1814.5,931.5],[1874.25,931.75]],&quot;value&quot;:1.0548839940356494,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:19,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,055&quot;},{&quot;id&quot;:&quot;d3d87fd5&quot;,&quot;group_id&quot;:&quot;f3f1bda2&quot;,&quot;name&quot;:&quot;Coffrage — Voile #019&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1814.5,931.5],[1874.25,931.75]],&quot;value&quot;:5.907350366599636,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:19,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 1,055 × 2,800&quot;},{&quot;id&quot;:&quot;9f3523c3&quot;,&quot;group_id&quot;:&quot;f3f1bda2&quot;,&quot;name&quot;:&quot;Volume — Voile #019&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1814.5,931.5],[1874.25,931.75]],&quot;value&quot;:0.5316615329939672,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:19,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,055 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;21579394&quot;,&quot;group_id&quot;:&quot;f342a0a1&quot;,&quot;name&quot;:&quot;Voile #020&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,921.25],[1864.0,879.5]],&quot;value&quot;:0.737088221695121,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:20,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,737&quot;},{&quot;id&quot;:&quot;ebd247c8&quot;,&quot;group_id&quot;:&quot;f342a0a1&quot;,&quot;name&quot;:&quot;Coffrage — Voile #020&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,921.25],[1864.0,879.5]],&quot;value&quot;:4.127694041492678,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:20,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,737 × 2,800&quot;},{&quot;id&quot;:&quot;24f6ad6e&quot;,&quot;group_id&quot;:&quot;f342a0a1&quot;,&quot;name&quot;:&quot;Volume — Voile #020&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,921.25],[1864.0,879.5]],&quot;value&quot;:0.37149246373434097,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:20,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,737 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;7a3f5c59&quot;,&quot;group_id&quot;:&quot;f64343db&quot;,&quot;name&quot;:&quot;Voile #021&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,778.5],[1863.5,638.5]],&quot;value&quot;:2.471688841909031,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:21,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,472&quot;},{&quot;id&quot;:&quot;2d503479&quot;,&quot;group_id&quot;:&quot;f64343db&quot;,&quot;name&quot;:&quot;Coffrage — Voile #021&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,778.5],[1863.5,638.5]],&quot;value&quot;:13.841457514690571,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:21,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 2,472 × 2,800&quot;},{&quot;id&quot;:&quot;4a3724a5&quot;,&quot;group_id&quot;:&quot;f64343db&quot;,&quot;name&quot;:&quot;Volume — Voile #021&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,778.5],[1863.5,638.5]],&quot;value&quot;:1.2457311763221515,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:21,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,472 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;b40f44d1&quot;,&quot;group_id&quot;:&quot;c3efeeb4&quot;,&quot;name&quot;:&quot;Voile #022&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1874.0,537.75],[1874.25,471.25]],&quot;value&quot;:1.1740530088034908,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:22,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,174&quot;},{&quot;id&quot;:&quot;8c1c062a&quot;,&quot;group_id&quot;:&quot;c3efeeb4&quot;,&quot;name&quot;:&quot;Coffrage — Voile #022&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1874.0,537.75],[1874.25,471.25]],&quot;value&quot;:6.574696849299548,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:22,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 1,174 × 2,800&quot;},{&quot;id&quot;:&quot;dccd70ec&quot;,&quot;group_id&quot;:&quot;c3efeeb4&quot;,&quot;name&quot;:&quot;Volume — Voile #022&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1874.0,537.75],[1874.25,471.25]],&quot;value&quot;:0.5917227164369593,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:22,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;1,174 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;16dabbfc&quot;,&quot;group_id&quot;:&quot;6c8723b1&quot;,&quot;name&quot;:&quot;Voile #023&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1863.75,471.5],[1352.75,471.5]],&quot;value&quot;:9.021606737394176,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:23,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;9,022&quot;},{&quot;id&quot;:&quot;1113c6e6&quot;,&quot;group_id&quot;:&quot;6c8723b1&quot;,&quot;name&quot;:&quot;Coffrage — Voile #023&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1863.75,471.5],[1352.75,471.5]],&quot;value&quot;:50.520997729407384,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:23,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 9,022 × 2,800&quot;},{&quot;id&quot;:&quot;11500d1a&quot;,&quot;group_id&quot;:&quot;6c8723b1&quot;,&quot;name&quot;:&quot;Volume — Voile #023&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1863.75,471.5],[1352.75,471.5]],&quot;value&quot;:4.546889795646664,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:23,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;9,022 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;bbac0511&quot;,&quot;group_id&quot;:&quot;240e22ee&quot;,&quot;name&quot;:&quot;Voile #024&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1655.25,635.0],[1655.5,481.5]],&quot;value&quot;:2.710016576976733,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:24,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,710&quot;},{&quot;id&quot;:&quot;d71b14bd&quot;,&quot;group_id&quot;:&quot;240e22ee&quot;,&quot;name&quot;:&quot;Coffrage — Voile #024&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1655.25,635.0],[1655.5,481.5]],&quot;value&quot;:15.176092831069704,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:24,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 2,710 × 2,800&quot;},{&quot;id&quot;:&quot;e8efd336&quot;,&quot;group_id&quot;:&quot;240e22ee&quot;,&quot;name&quot;:&quot;Volume — Voile #024&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1655.25,635.0],[1655.5,481.5]],&quot;value&quot;:1.3658483547962734,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:24,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,710 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;30599cde&quot;,&quot;group_id&quot;:&quot;ce5a9973&quot;,&quot;name&quot;:&quot;Voile #025&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[483.25,656.75],[532.75,656.75]],&quot;value&quot;:0.8739129814109818,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:25,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,874&quot;},{&quot;id&quot;:&quot;7b0731bf&quot;,&quot;group_id&quot;:&quot;ce5a9973&quot;,&quot;name&quot;:&quot;Coffrage — Voile #025&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[483.25,656.75],[532.75,656.75]],&quot;value&quot;:4.893912695901498,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:25,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,874 × 2,800&quot;},{&quot;id&quot;:&quot;0b2909ad&quot;,&quot;group_id&quot;:&quot;ce5a9973&quot;,&quot;name&quot;:&quot;Volume — Voile #025&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[483.25,656.75],[532.75,656.75]],&quot;value&quot;:0.44045214263113475,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:25,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,874 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;b6bb69ef&quot;,&quot;group_id&quot;:&quot;15ef194f&quot;,&quot;name&quot;:&quot;Voile #026&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[656.0,656.5],[807.25,656.5]],&quot;value&quot;:2.670289665422444,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:26,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,670&quot;},{&quot;id&quot;:&quot;b7b8b1f5&quot;,&quot;group_id&quot;:&quot;15ef194f&quot;,&quot;name&quot;:&quot;Coffrage — Voile #026&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[656.0,656.5],[807.25,656.5]],&quot;value&quot;:14.953622126365687,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:26,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 2,670 × 2,800&quot;},{&quot;id&quot;:&quot;28a0fa13&quot;,&quot;group_id&quot;:&quot;15ef194f&quot;,&quot;name&quot;:&quot;Volume — Voile #026&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[656.0,656.5],[807.25,656.5]],&quot;value&quot;:1.3458259913729118,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:26,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,670 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;02a2d05f&quot;,&quot;group_id&quot;:&quot;bf9e5239&quot;,&quot;name&quot;:&quot;Voile #027&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[726.0,656.5],[726.25,438.5]],&quot;value&quot;:3.8487506105409315,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:27,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;3,849&quot;},{&quot;id&quot;:&quot;bbbffef2&quot;,&quot;group_id&quot;:&quot;bf9e5239&quot;,&quot;name&quot;:&quot;Coffrage — Voile #027&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[726.0,656.5],[726.25,438.5]],&quot;value&quot;:21.553003419029213,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:27,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 3,849 × 2,800&quot;},{&quot;id&quot;:&quot;30be18ed&quot;,&quot;group_id&quot;:&quot;bf9e5239&quot;,&quot;name&quot;:&quot;Volume — Voile #027&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[726.0,656.5],[726.25,438.5]],&quot;value&quot;:1.9397703077126291,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:27,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;3,849 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;0f3b213a&quot;,&quot;group_id&quot;:&quot;d34ebf9e&quot;,&quot;name&quot;:&quot;Voile #028&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[681.25,369.75],[681.5,216.75]],&quot;value&quot;:2.7011891848698903,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:28,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,701&quot;},{&quot;id&quot;:&quot;fe8c3bd4&quot;,&quot;group_id&quot;:&quot;d34ebf9e&quot;,&quot;name&quot;:&quot;Coffrage — Voile #028&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[681.25,369.75],[681.5,216.75]],&quot;value&quot;:15.126659435271385,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:28,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 2,701 × 2,800&quot;},{&quot;id&quot;:&quot;0c2500d4&quot;,&quot;group_id&quot;:&quot;d34ebf9e&quot;,&quot;name&quot;:&quot;Volume — Voile #028&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[681.25,369.75],[681.5,216.75]],&quot;value&quot;:1.3613993491744245,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:28,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2,701 × 2,800 × 0,180&quot;},{&quot;id&quot;:&quot;44e9ca45&quot;,&quot;group_id&quot;:&quot;ce2a8d0f&quot;,&quot;name&quot;:&quot;Voile #029&quot;,&quot;mtype&quot;:&quot;VOILE&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,457.5],[1863.75,471.5]],&quot;value&quot;:0.24720671278564152,&quot;unit&quot;:&quot;ml&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:29,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,247&quot;},{&quot;id&quot;:&quot;aa19739f&quot;,&quot;group_id&quot;:&quot;ce2a8d0f&quot;,&quot;name&quot;:&quot;Coffrage — Voile #029&quot;,&quot;mtype&quot;:&quot;VOILE_COFF&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,457.5],[1863.75,471.5]],&quot;value&quot;:1.3843575915995925,&quot;unit&quot;:&quot;m²&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:2,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:29,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;2 × 0,247 × 2,800&quot;},{&quot;id&quot;:&quot;74e9c5e7&quot;,&quot;group_id&quot;:&quot;ce2a8d0f&quot;,&quot;name&quot;:&quot;Volume — Voile #029&quot;,&quot;mtype&quot;:&quot;VOILE_VOL&quot;,&quot;floor&quot;:&quot;SSOL&quot;,&quot;billing&quot;:&quot;COFFRAGE&quot;,&quot;kind&quot;:&quot;wall&quot;,&quot;pts_pdf&quot;:[[1864.0,457.5],[1863.75,471.5]],&quot;value&quot;:0.12459218324396332,&quot;unit&quot;:&quot;m³&quot;,&quot;page&quot;:1,&quot;label_mode&quot;:&quot;left&quot;,&quot;label_size&quot;:14,&quot;label_angle&quot;:0.0,&quot;side&quot;:-1,&quot;faces&quot;:null,&quot;thickness_cm&quot;:18.0,&quot;height_m&quot;:2.8,&quot;edge_height_m&quot;:null,&quot;section_w_cm&quot;:null,&quot;section_h_cm&quot;:null,&quot;depth_m&quot;:null,&quot;locked&quot;:false,&quot;article_ref&quot;:&quot;&quot;,&quot;m_number&quot;:29,&quot;deduction&quot;:false,&quot;deduct_desc&quot;:&quot;&quot;,&quot;deduct_target_gid&quot;:&quot;&quot;,&quot;formula_text&quot;:&quot;0,247 × 2,800 × 0,180&quot;}],&quot;soumission&quot;:[],&quot;terrassement&quot;:{&quot;tf&quot;:420.5,&quot;fond&quot;:416.91,&quot;foisonnement&quot;:1.3,&quot;deduct_pct&quot;:5.0,&quot;talus_angle&quot;:45.0,&quot;talus_enabled&quot;:true,&quot;marge_pct&quot;:0.0,&quot;zone_machine&quot;:0.0,&quot;conservateur&quot;:false,&quot;emprise_gid&quot;:null,&quot;points_tn&quot;:[],&quot;segments&quot;:[],&quot;show_proj&quot;:true,&quot;show_proj_fill&quot;:true,&quot;show_proj_dims&quot;:false,&quot;join_proj&quot;:true,&quot;mode2_real&quot;:false,&quot;show_real_limits&quot;:true,&quot;real_limit_kind&quot;:&quot;talus_32&quot;,&quot;real_limits&quot;:[],&quot;barrier_mode&quot;:false,&quot;barrier_show_connectors&quot;:true,&quot;barrier_max_dist_m&quot;:30.0}}</script>
+
+<div id="hud">
+  <div id="status"><span id="dot"></span><span id="stText">Vise HIRO</span></div>
+  <div id="title">Plan coffrage AR — JSON réel</div>
+  <div id="sub">Voiles reconstruits depuis les segments du fichier JSON. Le rendu est bas pour rester lisible sur table.</div>
+  <div id="stats">
+    <div class="card"><b id="statMl">–</b><span>Voiles</span></div>
+    <div class="card"><b id="statCoff">–</b><span>Coffrage</span></div>
+    <div class="card"><b id="statVol">–</b><span>Volume murs</span></div>
+    <div class="card"><b id="statN">–</b><span>Segments</span></div>
+  </div>
+</div>
+
+<button id="gear">⚙️</button>
+<div id="toast"></div>
+<div id="hint">Un doigt = tourner le plan. Deux doigts = zoom. Ouvre ⚙️ pour sauvegarder ou masquer les repères.</div>
+
+<a-scene
+  embedded
+  vr-mode-ui="enabled:false"
+  renderer="alpha:true; antialias:true; precision:medium; logarithmicDepthBuffer:true"
+  arjs="sourceType:webcam; debugUIEnabled:false; detectionMode:mono; trackingMethod:best; maxDetectionRate:30; canvasWidth:640; canvasHeight:480;">
+
+  <a-marker id="marker" preset="hiro" smooth="true" smoothCount="5" smoothTolerance="0.006" smoothThreshold="2">
+    <a-entity id="anchor" position="0 0 0" rotation="0 0 0" scale="1 1 1">
+      <a-entity id="planRoot" position="0 0 0" rotation="0 0 0" scale="1 1 1"></a-entity>
+      <a-box id="originCube" position="0 0.045 0" width="0.045" height="0.09" depth="0.045" color="#22c55e"></a-box>
     </a-entity>
   </a-marker>
+
   <a-entity camera></a-entity>
 </a-scene>
 
 <div id="panel">
-<h2>Réglages rapides</h2>
-<div class="grid">
-  <button class="btn" id="bFit">Plan lisible</button>
-  <button class="btn" id="bRelief">Relief +</button>
-  <button class="btn orange" id="bTurn">Tourner 90°</button>
-  <button class="btn gray" id="bReset">Reset</button>
-</div>
-<div class="row"><label>Taille <b id="vScale">1.00</b></label><input id="scale" type="range" min="0.35" max="2.2" step="0.01" value="1"></div>
-<div class="row"><label>Relief / hauteur <b id="vY">1.00</b></label><input id="sy" type="range" min="0.25" max="3" step="0.05" value="1"></div>
-<div class="row"><label>Rotation <b id="vRot">0°</b></label><input id="rot" type="range" min="-180" max="180" step="1" value="0"></div>
-<div class="row"><label>Décalage X <b id="vX">0.00</b></label><input id="px" type="range" min="-0.8" max="0.8" step="0.01" value="0"></div>
-<div class="row"><label>Décalage Z <b id="vZ">0.00</b></label><input id="pz" type="range" min="-0.8" max="0.8" step="0.01" value="0"></div>
-<div class="grid"><button class="btn green" id="bSave">✓ Sauvegarder</button><button class="btn blue" id="bCopy">Copier réglages</button></div>
+  <h2>Réglages du plan</h2>
+
+  <div class="grid3">
+    <button class="preset" data-preset="plan">Plan lisible</button>
+    <button class="preset" data-preset="relief">Relief bas</button>
+    <button class="preset" data-preset="haut">Murs hauts</button>
+  </div>
+
+  <div class="row"><label>Échelle générale <b id="vScale">1.00</b></label>
+    <input id="scale" type="range" min="0.35" max="2.20" step="0.01" value="1"></div>
+
+  <div class="row"><label>Hauteur des voiles <b id="vH">0.080</b></label>
+    <input id="wallH" type="range" min="0.025" max="0.35" step="0.005" value="0.08"></div>
+
+  <div class="row"><label>Épaisseur visuelle <b id="vT">1.00</b></label>
+    <input id="thick" type="range" min="0.55" max="2.20" step="0.05" value="1"></div>
+
+  <div class="row"><label>Rotation doigt / angle <b id="vYaw">0°</b></label>
+    <input id="yaw" type="range" min="-180" max="180" step="1" value="0"></div>
+
+  <div class="row"><label>Décalage X <b id="vX">0.00</b></label>
+    <input id="posX" type="range" min="-0.6" max="0.6" step="0.01" value="0"></div>
+
+  <div class="row"><label>Décalage Z <b id="vZ">0.00</b></label>
+    <input id="posZ" type="range" min="-0.6" max="0.6" step="0.01" value="0"></div>
+
+  <div class="grid2">
+    <button class="action green" id="save">✓ Sauvegarder</button>
+    <button class="action blue" id="copy">⧉ Copier réglages</button>
+    <button class="action orange" id="repere">Masquer repère</button>
+    <button class="action grey" id="reset">↺ Reset</button>
+  </div>
 </div>
 
 <script>
-const pivot=document.getElementById('pivot'), plan=document.getElementById('plan'), panel=document.getElementById('panel');
-const statusEl=document.getElementById('status'), stxt=document.getElementById('stxt');
-const inputs=['scale','sy','rot','px','pz'];
-let S={scale:1,sy:1,rot:0,px:0,pz:0};
-function read(){inputs.forEach(id=>S[id]=parseFloat(document.getElementById(id).value));}
-function write(){inputs.forEach(id=>document.getElementById(id).value=S[id]);}
-function apply(){
- read();
- pivot.setAttribute('rotation','0 '+S.rot+' 0');
- pivot.setAttribute('position',S.px+' 0.012 '+S.pz);
- pivot.setAttribute('scale',S.scale+' '+S.scale+' '+S.scale);
- plan.setAttribute('scale','1 '+S.sy+' 1');
- vScale.textContent=S.scale.toFixed(2);vY.textContent=S.sy.toFixed(2);vRot.textContent=Math.round(S.rot)+'°';vX.textContent=S.px.toFixed(2);vZ.textContent=S.pz.toFixed(2);
-}
-function load(){try{let d=JSON.parse(localStorage.getItem('planARv2')); if(d){Object.assign(S,d);write();}}catch(e){} apply();}
-function save(){read();localStorage.setItem('planARv2',JSON.stringify(S));}
-inputs.forEach(id=>document.getElementById(id).addEventListener('input',apply));
-gear.onclick=()=>panel.classList.toggle('open');
-bFit.onclick=()=>{S={scale:1.05,sy:1,rot:S.rot||0,px:0,pz:0};write();apply();}
-bRelief.onclick=()=>{S.sy=Math.min(3,S.sy+0.4);write();apply();}
-bTurn.onclick=()=>{S.rot=(S.rot+90); if(S.rot>180)S.rot-=360; write();apply();}
-bReset.onclick=()=>{S={scale:1,sy:1,rot:0,px:0,pz:0};write();apply();localStorage.removeItem('planARv2');}
-bSave.onclick=()=>{save();panel.classList.remove('open');}
-bCopy.onclick=()=>{read();let txt=JSON.stringify(S);navigator.clipboard&&navigator.clipboard.writeText(txt);}
-hiro.addEventListener('markerFound',()=>{statusEl.classList.remove('lost');stxt.textContent='HIRO détecté';});
-hiro.addEventListener('markerLost',()=>{statusEl.classList.add('lost');stxt.textContent='Vise HIRO';});
+(function(){
+  "use strict";
 
-// gestes : un doigt rotation, deux doigts zoom
-let mode='',x0=0,rot0=0,d0=0,scale0=1;
-function dist(t){let dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.hypot(dx,dy)}
-document.addEventListener('touchstart',e=>{
- if(panel.classList.contains('open')) return;
- if(e.touches.length===1){mode='rot';x0=e.touches[0].clientX;rot0=S.rot;}
- if(e.touches.length===2){mode='zoom';d0=dist(e.touches);scale0=S.scale;}
-},{passive:false});
-document.addEventListener('touchmove',e=>{
- if(panel.classList.contains('open')) return;
- e.preventDefault();
- if(mode==='rot'&&e.touches.length===1){S.rot=rot0+(e.touches[0].clientX-x0)*0.45; if(S.rot>180)S.rot-=360;if(S.rot<-180)S.rot+=360;write();apply();}
- if(mode==='zoom'&&e.touches.length===2){S.scale=Math.max(.35,Math.min(2.2,scale0*(dist(e.touches)/d0)));write();apply();}
-},{passive:false});
-document.addEventListener('touchend',()=>{mode='';},{passive:false});
-window.addEventListener('load',load);
+  const raw = JSON.parse(document.getElementById("nendaz-json").textContent);
+  const items = raw.items || [];
+  const walls = items.filter(it => it.mtype === "VOILE" && it.kind === "wall" && Array.isArray(it.pts_pdf) && it.pts_pdf.length >= 2);
+  const scalePdfToM = Number(raw.scale || 1);
+
+  const stats = {
+    ml: walls.reduce((s,w)=>s + Number(w.value || 0), 0),
+    coff: items.filter(it=>it.mtype==="VOILE_COFF").reduce((s,w)=>s + Number(w.value || 0), 0),
+    vol: items.filter(it=>it.mtype==="VOILE_VOL").reduce((s,w)=>s + Number(w.value || 0), 0),
+    n: walls.length
+  };
+
+  document.getElementById("statMl").textContent = stats.ml.toFixed(2) + " ml";
+  document.getElementById("statCoff").textContent = stats.coff.toFixed(2) + " m²";
+  document.getElementById("statVol").textContent = stats.vol.toFixed(2) + " m³";
+  document.getElementById("statN").textContent = String(stats.n);
+
+  const root = document.getElementById("planRoot");
+  const marker = document.getElementById("marker");
+  const status = document.getElementById("status");
+  const stText = document.getElementById("stText");
+  const originCube = document.getElementById("originCube");
+
+  const ui = {
+    scale: document.getElementById("scale"),
+    wallH: document.getElementById("wallH"),
+    thick: document.getElementById("thick"),
+    yaw: document.getElementById("yaw"),
+    posX: document.getElementById("posX"),
+    posZ: document.getElementById("posZ")
+  };
+
+  const labels = {
+    scale: document.getElementById("vScale"),
+    wallH: document.getElementById("vH"),
+    thick: document.getElementById("vT"),
+    yaw: document.getElementById("vYaw"),
+    posX: document.getElementById("vX"),
+    posZ: document.getElementById("vZ")
+  };
+
+  const defaults = {
+    scale: 1.00,
+    wallH: 0.080,
+    thick: 1.00,
+    yaw: 0,
+    posX: 0,
+    posZ: 0
+  };
+
+  let baseFactor = 1;
+  let baseY = 0;
+  let repereVisible = true;
+  let userYaw = 0;
+  let pinchStartDist = 0;
+  let pinchStartScale = 1;
+  let touchStartX = 0;
+  let touchStartYaw = 0;
+
+  function mPoint(p) {
+    return { x: p[0] * scalePdfToM, z: -p[1] * scalePdfToM };
+  }
+
+  function computeBounds() {
+    const pts = [];
+    walls.forEach(w => {
+      pts.push(mPoint(w.pts_pdf[0]));
+      pts.push(mPoint(w.pts_pdf[1]));
+    });
+    const minX = Math.min(...pts.map(p=>p.x));
+    const maxX = Math.max(...pts.map(p=>p.x));
+    const minZ = Math.min(...pts.map(p=>p.z));
+    const maxZ = Math.max(...pts.map(p=>p.z));
+    return {
+      minX, maxX, minZ, maxZ,
+      cx:(minX+maxX)/2,
+      cz:(minZ+maxZ)/2,
+      w:maxX-minX,
+      d:maxZ-minZ
+    };
+  }
+
+  function addBox(attrs) {
+    const el = document.createElement("a-box");
+    Object.keys(attrs).forEach(k => el.setAttribute(k, attrs[k]));
+    root.appendChild(el);
+    return el;
+  }
+
+  function buildPlan() {
+    root.innerHTML = "";
+
+    const b = computeBounds();
+    const target = 1.22; // largeur max en unités du marqueur
+    baseFactor = target / Math.max(b.w, b.d);
+    const margin = 0.45; // mètre réel avant conversion
+    const slabW = (b.w + margin * 2) * baseFactor;
+    const slabD = (b.d + margin * 2) * baseFactor;
+
+    // dalle bleue translucide
+    addBox({
+      id:"slab",
+      position:`0 0.006 0`,
+      width:slabW.toFixed(4),
+      height:"0.012",
+      depth:slabD.toFixed(4),
+      color:"#6fb6c9",
+      opacity:"0.55",
+      transparent:"true",
+      metalness:"0",
+      roughness:"0.7"
+    });
+
+    // contour noir de dalle
+    const edgeH = 0.018, edgeT = 0.012;
+    addBox({position:`0 0.018 ${(-slabD/2).toFixed(4)}`, width:slabW.toFixed(4), height:edgeH, depth:edgeT, color:"#111827"});
+    addBox({position:`0 0.018 ${( slabD/2).toFixed(4)}`, width:slabW.toFixed(4), height:edgeH, depth:edgeT, color:"#111827"});
+    addBox({position:`${(-slabW/2).toFixed(4)} 0.018 0`, width:edgeT, height:edgeH, depth:slabD.toFixed(4), color:"#111827"});
+    addBox({position:`${( slabW/2).toFixed(4)} 0.018 0`, width:edgeT, height:edgeH, depth:slabD.toFixed(4), color:"#111827"});
+
+    const wh = Number(ui.wallH.value);
+    const thMul = Number(ui.thick.value);
+
+    walls.forEach((w, idx) => {
+      const p1 = mPoint(w.pts_pdf[0]);
+      const p2 = mPoint(w.pts_pdf[1]);
+      const x1 = (p1.x - b.cx) * baseFactor;
+      const z1 = (p1.z - b.cz) * baseFactor;
+      const x2 = (p2.x - b.cx) * baseFactor;
+      const z2 = (p2.z - b.cz) * baseFactor;
+      const dx = x2-x1;
+      const dz = z2-z1;
+      const len = Math.sqrt(dx*dx + dz*dz);
+      if (!isFinite(len) || len <= 0.002) return;
+
+      const wallT = Math.max(0.010, (Number(w.thickness_cm || 18) / 100) * baseFactor * thMul);
+      const angleY = -Math.atan2(dz, dx) * 180 / Math.PI;
+
+      // ombre noire légère sous le voile pour mieux lire le plan
+      addBox({
+        position:`${((x1+x2)/2).toFixed(4)} 0.026 ${((z1+z2)/2).toFixed(4)}`,
+        rotation:`0 ${angleY.toFixed(3)} 0`,
+        width:len.toFixed(4),
+        height:"0.010",
+        depth:(wallT*1.22).toFixed(4),
+        color:"#020617",
+        opacity:"0.85"
+      });
+
+      // voile bas
+      addBox({
+        position:`${((x1+x2)/2).toFixed(4)} ${(0.030 + wh/2).toFixed(4)} ${((z1+z2)/2).toFixed(4)}`,
+        rotation:`0 ${angleY.toFixed(3)} 0`,
+        width:len.toFixed(4),
+        height:wh.toFixed(4),
+        depth:wallT.toFixed(4),
+        color:"#d1d5db",
+        roughness:"0.5",
+        metalness:"0"
+      });
+
+      // petit repère foncé aux extrémités pour voir les interruptions et les segments
+      if (len > 0.04) {
+        addBox({
+          position:`${x1.toFixed(4)} ${(0.034 + wh + 0.002).toFixed(4)} ${z1.toFixed(4)}`,
+          rotation:`0 ${angleY.toFixed(3)} 0`,
+          width:Math.min(0.028, len*0.12).toFixed(4),
+          height:"0.008",
+          depth:(wallT*1.35).toFixed(4),
+          color:"#374151"
+        });
+        addBox({
+          position:`${x2.toFixed(4)} ${(0.034 + wh + 0.002).toFixed(4)} ${z2.toFixed(4)}`,
+          rotation:`0 ${angleY.toFixed(3)} 0`,
+          width:Math.min(0.028, len*0.12).toFixed(4),
+          height:"0.008",
+          depth:(wallT*1.35).toFixed(4),
+          color:"#374151"
+        });
+      }
+    });
+
+    // pas de trémies dans le JSON fourni: on indique absence par une petite pastille rouge hors modèle
+    addBox({
+      id:"jsonInfo",
+      position:`${(slabW/2 - 0.05).toFixed(4)} 0.050 ${(-slabD/2 + 0.05).toFixed(4)}`,
+      width:"0.035", height:"0.070", depth:"0.035",
+      color:"#ef4444"
+    });
+
+    applyTransform();
+  }
+
+  function readSettings() {
+    const out = {};
+    Object.keys(ui).forEach(k => out[k] = Number(ui[k].value));
+    return out;
+  }
+
+  function writeSettings(s) {
+    Object.keys(ui).forEach(k => {
+      if (s[k] !== undefined && ui[k]) ui[k].value = s[k];
+    });
+  }
+
+  function updateLabels() {
+    labels.scale.textContent = Number(ui.scale.value).toFixed(2);
+    labels.wallH.textContent = Number(ui.wallH.value).toFixed(3);
+    labels.thick.textContent = Number(ui.thick.value).toFixed(2);
+    labels.yaw.textContent = Math.round(Number(ui.yaw.value)) + "°";
+    labels.posX.textContent = Number(ui.posX.value).toFixed(2);
+    labels.posZ.textContent = Number(ui.posZ.value).toFixed(2);
+  }
+
+  function applyTransform() {
+    const s = readSettings();
+    root.setAttribute("scale", `${s.scale} ${s.scale} ${s.scale}`);
+    root.setAttribute("rotation", `0 ${s.yaw} 0`);
+    root.setAttribute("position", `${s.posX} 0 ${s.posZ}`);
+    userYaw = s.yaw;
+    updateLabels();
+  }
+
+  function rebuildAndApply() {
+    buildPlan();
+  }
+
+  function toast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.style.opacity = 1;
+    setTimeout(()=>t.style.opacity=0, 1600);
+  }
+
+  function saveSettings() {
+    localStorage.setItem("nendazJsonArSettings", JSON.stringify(readSettings()));
+    toast("Réglages sauvegardés ✓");
+  }
+
+  function loadSettings() {
+    try {
+      const s = JSON.parse(localStorage.getItem("nendazJsonArSettings") || "null");
+      if (s) writeSettings(s);
+    } catch(e) {}
+  }
+
+  function resetSettings() {
+    writeSettings(defaults);
+    localStorage.removeItem("nendazJsonArSettings");
+    rebuildAndApply();
+    toast("Réinitialisé");
+  }
+
+  function setPreset(name) {
+    if (name === "plan") {
+      writeSettings({scale:1.0, wallH:0.055, thick:1.20, yaw:Number(ui.yaw.value), posX:Number(ui.posX.value), posZ:Number(ui.posZ.value)});
+    } else if (name === "relief") {
+      writeSettings({scale:1.0, wallH:0.105, thick:1.10, yaw:Number(ui.yaw.value), posX:Number(ui.posX.value), posZ:Number(ui.posZ.value)});
+    } else if (name === "haut") {
+      writeSettings({scale:0.82, wallH:0.24, thick:1.0, yaw:Number(ui.yaw.value), posX:Number(ui.posX.value), posZ:Number(ui.posZ.value)});
+    }
+    rebuildAndApply();
+  }
+
+  Object.keys(ui).forEach(k => {
+    ui[k].addEventListener("input", () => {
+      if (k === "wallH" || k === "thick") rebuildAndApply();
+      else applyTransform();
+    });
+  });
+
+  document.querySelectorAll("button.preset").forEach(b => b.addEventListener("click", () => setPreset(b.dataset.preset)));
+
+  document.getElementById("gear").addEventListener("click", () => {
+    document.getElementById("panel").classList.toggle("open");
+  });
+
+  document.getElementById("save").addEventListener("click", saveSettings);
+  document.getElementById("reset").addEventListener("click", resetSettings);
+  document.getElementById("repere").addEventListener("click", function() {
+    repereVisible = !repereVisible;
+    originCube.setAttribute("visible", repereVisible);
+    this.textContent = repereVisible ? "Masquer repère" : "Afficher repère";
+  });
+
+  document.getElementById("copy").addEventListener("click", () => {
+    const s = readSettings();
+    const txt = JSON.stringify(s);
+    if (navigator.clipboard) navigator.clipboard.writeText(txt);
+    toast("Réglages copiés");
+  });
+
+  marker.addEventListener("markerFound", () => {
+    status.classList.add("ok");
+    stText.textContent = "HIRO détecté";
+  });
+  marker.addEventListener("markerLost", () => {
+    status.classList.remove("ok");
+    stText.textContent = "Vise HIRO";
+  });
+
+  function dist(t1,t2) {
+    const dx=t1.clientX-t2.clientX, dy=t1.clientY-t2.clientY;
+    return Math.sqrt(dx*dx+dy*dy);
+  }
+
+  window.addEventListener("touchstart", (e) => {
+    if (e.target.closest("#panel") || e.target.closest("#gear")) return;
+    if (e.touches.length === 1) {
+      touchStartX = e.touches[0].clientX;
+      touchStartYaw = Number(ui.yaw.value);
+    } else if (e.touches.length === 2) {
+      pinchStartDist = dist(e.touches[0], e.touches[1]);
+      pinchStartScale = Number(ui.scale.value);
+    }
+  }, {passive:false});
+
+  window.addEventListener("touchmove", (e) => {
+    if (e.target.closest("#panel") || e.target.closest("#gear")) return;
+    e.preventDefault();
+    if (e.touches.length === 1) {
+      const dx = e.touches[0].clientX - touchStartX;
+      ui.yaw.value = Math.max(-180, Math.min(180, touchStartYaw + dx * 0.45));
+      applyTransform();
+    } else if (e.touches.length === 2) {
+      const d = dist(e.touches[0], e.touches[1]);
+      if (pinchStartDist > 0) {
+        const ns = Math.max(0.35, Math.min(2.20, pinchStartScale * (d / pinchStartDist)));
+        ui.scale.value = ns.toFixed(2);
+        applyTransform();
+      }
+    }
+  }, {passive:false});
+
+  loadSettings();
+  buildPlan();
+
+})();
 </script>
 </body>
 </html>
