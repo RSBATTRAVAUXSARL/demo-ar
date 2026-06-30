@@ -2,88 +2,104 @@
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Démo AR - Plan lisible</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Plan coffrage AR - lisible</title>
 <script src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
 <style>
-  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;color:white;touch-action:none}
-  video,#arjsVideo{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:1!important}
-  canvas,.a-canvas{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
-  #hud{position:fixed;left:10px;top:10px;z-index:20;max-width:72vw;background:rgba(15,23,42,.72);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.16);border-radius:14px;padding:9px 12px;font-size:13px;line-height:1.25}
-  #status{display:inline-flex;align-items:center;gap:6px;background:#f97316;border-radius:999px;padding:4px 9px;font-weight:800;margin-bottom:4px}.dot{width:9px;height:9px;border-radius:50%;background:#ef4444}.ok .dot{background:#22c55e}.ok{background:#16a34a!important}
-  #gear{position:fixed;right:14px;top:14px;z-index:31;width:56px;height:56px;border:0;border-radius:50%;background:#2563eb;color:#fff;font-size:26px;font-weight:900;box-shadow:0 8px 24px rgba(0,0,0,.45)}
-  #panel{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(15,23,42,.94);backdrop-filter:blur(12px);border-top-left-radius:22px;border-top-right-radius:22px;padding:14px 16px calc(16px + env(safe-area-inset-bottom));max-height:70vh;overflow:auto;transform:translateY(105%);transition:.22s transform;box-shadow:0 -12px 35px rgba(0,0,0,.5)}
-  #panel.open{transform:translateY(0)}
-  h2{margin:0 0 12px;font-size:18px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.row{margin:10px 0}.row label{display:flex;justify-content:space-between;font-size:14px;margin-bottom:4px}.row b{color:#7dd3fc}input[type=range]{width:100%}
-  button.big{border:0;border-radius:13px;padding:13px 10px;font-size:15px;font-weight:800;color:white;background:#7c3aed}.green{background:#16a34a!important}.orange{background:#f97316!important}.gray{background:#64748b!important}.blue{background:#0ea5e9!important}
-  #help{position:fixed;left:12px;right:12px;bottom:14px;z-index:19;text-align:center;background:rgba(0,0,0,.56);border-radius:12px;padding:8px 10px;font-size:13px;line-height:1.25}
-  #toast{position:fixed;left:50%;bottom:86px;transform:translateX(-50%);z-index:40;background:#16a34a;border-radius:999px;padding:9px 14px;font-size:13px;opacity:0;transition:.2s opacity;white-space:nowrap}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:-apple-system,BlinkMacSystemFont,Arial,sans-serif;touch-action:none}
+video,#arjsVideo{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:1!important}
+.a-canvas,canvas.a-canvas{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
+#hud{position:fixed;left:12px;top:calc(12px + env(safe-area-inset-top));z-index:10;max-width:78vw;background:rgba(10,16,30,.78);color:#fff;border:1px solid rgba(255,255,255,.16);border-radius:16px;padding:10px 13px;box-shadow:0 8px 28px rgba(0,0,0,.35);backdrop-filter:blur(8px)}
+#status{display:inline-flex;gap:7px;align-items:center;background:#16a34a;padding:6px 10px;border-radius:999px;font-weight:800;font-size:14px;margin-bottom:6px}
+#status.lost{background:#f97316}.dot{width:10px;height:10px;background:#34d399;border-radius:50%}.lost .dot{background:#ff2d2d}
+#hud b{display:block;font-size:16px;margin-bottom:2px}.small{font-size:13px;color:#e5e7eb;line-height:1.25}
+#gear{position:fixed;right:14px;top:calc(18px + env(safe-area-inset-top));z-index:20;width:56px;height:56px;border:0;border-radius:50%;background:#2563eb;color:white;font-size:26px;font-weight:900;box-shadow:0 8px 28px rgba(0,0,0,.45)}
+#help{position:fixed;left:12px;right:12px;bottom:calc(18px + env(safe-area-inset-bottom));z-index:10;color:#fff;text-align:center;background:rgba(0,0,0,.62);border-radius:14px;padding:10px 12px;font-size:14px}
+#panel{position:fixed;left:0;right:0;bottom:0;z-index:30;background:rgba(10,18,35,.96);color:#fff;border-radius:20px 20px 0 0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));box-shadow:0 -10px 30px rgba(0,0,0,.55);transform:translateY(105%);transition:.22s;max-height:74vh;overflow:auto}
+#panel.open{transform:translateY(0)}h2{font-size:19px;margin:0 0 12px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.btn{border:0;border-radius:14px;padding:13px 12px;color:white;font-size:16px;font-weight:900;background:#7c3aed}.green{background:#16a34a}.blue{background:#0ea5e9}.orange{background:#f97316}.gray{background:#64748b}
+.row{margin:12px 0}.row label{display:flex;justify-content:space-between;font-size:15px;margin-bottom:5px}.row b{color:#7dd3fc}input[type=range]{width:100%;height:34px}.ghost{opacity:.28}
 </style>
 </head>
 <body>
-<div id="hud"><div id="status"><span class="dot"></span><span id="stxt">Vise HIRO</span></div><br><b>Plan coffrage AR</b><br><span id="info">Un doigt = tourner. Deux doigts = zoom.</span></div>
-<button id="gear">⚙</button><div id="toast"></div>
+<div id="hud"><div id="status" class="lost"><span class="dot"></span><span id="stxt">Vise HIRO</span></div><b>Plan coffrage AR</b><div class="small">Le modèle est volontairement bas : lisible comme un plan.</div></div>
+<button id="gear">⚙</button>
+<div id="help">Un doigt : tourner. Deux doigts : zoom. Vise le marqueur A4 à 40–70 cm.</div>
 
-<a-scene embedded vr-mode-ui="enabled:false" renderer="alpha:true; antialias:true; precision:high; logarithmicDepthBuffer:true" arjs="sourceType:webcam; trackingMethod:best; debugUIEnabled:false; detectionMode:mono;">
-  <a-assets timeout="30000"><a-asset-item id="buildingModel" src="model_plan_lisible.glb"></a-asset-item></a-assets>
-  <a-marker id="marker" preset="hiro" smooth="true" smoothCount="5" smoothTolerance="0.008" smoothThreshold="3">
-    <a-entity id="anchor" position="0 0 0" rotation="0 0 0" scale="1 1 1">
-      <a-plane id="base" position="0 0.002 0" rotation="-90 0 0" width="1.55" height="1.05" material="color:#38bdf8; opacity:.18; transparent:true; side:double"></a-plane>
-      <a-entity id="model" gltf-model="#buildingModel" position="0 0.01 0" rotation="0 0 0" scale="1 1 1"></a-entity>
+<a-scene embedded vr-mode-ui="enabled:false"
+  renderer="alpha:true;antialias:true;precision:medium;sortObjects:true"
+  arjs="sourceType:webcam;trackingMethod:best;debugUIEnabled:false;detectionMode:mono;">
+  <a-assets timeout="20000">
+    <a-asset-item id="planModel" src="model_plan_lisible_v2.glb"></a-asset-item>
+  </a-assets>
+  <a-marker id="hiro" preset="hiro" smooth="true" smoothCount="5" smoothTolerance="0.015" smoothThreshold="3">
+    <a-entity id="pivot" rotation="0 0 0" scale="1 1 1" position="0 0.012 0">
+      <a-entity id="plan" gltf-model="#planModel" rotation="0 0 0" position="0 0 0" scale="1 1 1"></a-entity>
     </a-entity>
   </a-marker>
   <a-entity camera></a-entity>
 </a-scene>
 
-<div id="help">Pose le marqueur à plat. Ouvre ⚙ pour régler. Pour une démo lisible : modèle en plan bas, pas en murs pleine hauteur.</div>
-
 <div id="panel">
-  <h2>Réglages rapides</h2>
-  <div class="grid">
-    <button class="big" id="presetPlan">Plan lisible</button>
-    <button class="big" id="presetMaquette">Maquette basse</button>
-  </div>
-  <div class="row"><label>Taille générale <b id="vScale">1.00</b></label><input id="scale" type="range" min="0.35" max="2.2" step="0.01" value="1.00"></div>
-  <div class="row"><label>Hauteur murs <b id="vHeight">1.00</b></label><input id="height" type="range" min="0.05" max="1.40" step="0.01" value="1.00"></div>
-  <div class="row"><label>Rotation plan <b id="vRot">0</b>°</label><input id="rot" type="range" min="-180" max="180" step="1" value="0"></div>
-  <div class="row"><label>Hauteur sur feuille <b id="vY">0.01</b></label><input id="posY" type="range" min="-0.15" max="0.35" step="0.005" value="0.01"></div>
-  <div class="grid">
-    <button class="big green" id="save">✓ Sauvegarder</button>
-    <button class="big blue" id="copy">⧉ Copier</button>
-    <button class="big orange" id="toggleBase">Masquer base</button>
-    <button class="big gray" id="reset">↺ Reset</button>
-  </div>
+<h2>Réglages rapides</h2>
+<div class="grid">
+  <button class="btn" id="bFit">Plan lisible</button>
+  <button class="btn" id="bRelief">Relief +</button>
+  <button class="btn orange" id="bTurn">Tourner 90°</button>
+  <button class="btn gray" id="bReset">Reset</button>
 </div>
+<div class="row"><label>Taille <b id="vScale">1.00</b></label><input id="scale" type="range" min="0.35" max="2.2" step="0.01" value="1"></div>
+<div class="row"><label>Relief / hauteur <b id="vY">1.00</b></label><input id="sy" type="range" min="0.25" max="3" step="0.05" value="1"></div>
+<div class="row"><label>Rotation <b id="vRot">0°</b></label><input id="rot" type="range" min="-180" max="180" step="1" value="0"></div>
+<div class="row"><label>Décalage X <b id="vX">0.00</b></label><input id="px" type="range" min="-0.8" max="0.8" step="0.01" value="0"></div>
+<div class="row"><label>Décalage Z <b id="vZ">0.00</b></label><input id="pz" type="range" min="-0.8" max="0.8" step="0.01" value="0"></div>
+<div class="grid"><button class="btn green" id="bSave">✓ Sauvegarder</button><button class="btn blue" id="bCopy">Copier réglages</button></div>
+</div>
+
 <script>
-const $=id=>document.getElementById(id); const marker=$('marker'), anchor=$('anchor'), model=$('model');
-const state={scale:1,height:1,rot:0,posY:0.01}; let baseVisible=true;
-function toast(t){$('toast').textContent=t;$('toast').style.opacity=1;setTimeout(()=>$('toast').style.opacity=0,1400)}
-function setInputs(){for(const k of ['scale','height','rot','posY']) $(k).value=state[k];}
+const pivot=document.getElementById('pivot'), plan=document.getElementById('plan'), panel=document.getElementById('panel');
+const statusEl=document.getElementById('status'), stxt=document.getElementById('stxt');
+const inputs=['scale','sy','rot','px','pz'];
+let S={scale:1,sy:1,rot:0,px:0,pz:0};
+function read(){inputs.forEach(id=>S[id]=parseFloat(document.getElementById(id).value));}
+function write(){inputs.forEach(id=>document.getElementById(id).value=S[id]);}
 function apply(){
-  const s=parseFloat($('scale').value), h=parseFloat($('height').value), r=parseFloat($('rot').value), y=parseFloat($('posY').value);
-  state.scale=s;state.height=h;state.rot=r;state.posY=y;
-  anchor.setAttribute('rotation','0 '+r+' 0');
-  anchor.setAttribute('scale',s+' '+s+' '+s);
-  model.setAttribute('scale','1 '+h+' 1');
-  model.setAttribute('position','0 '+y+' 0');
-  $('vScale').textContent=s.toFixed(2);$('vHeight').textContent=h.toFixed(2);$('vRot').textContent=Math.round(r);$('vY').textContent=y.toFixed(3);
+ read();
+ pivot.setAttribute('rotation','0 '+S.rot+' 0');
+ pivot.setAttribute('position',S.px+' 0.012 '+S.pz);
+ pivot.setAttribute('scale',S.scale+' '+S.scale+' '+S.scale);
+ plan.setAttribute('scale','1 '+S.sy+' 1');
+ vScale.textContent=S.scale.toFixed(2);vY.textContent=S.sy.toFixed(2);vRot.textContent=Math.round(S.rot)+'°';vX.textContent=S.px.toFixed(2);vZ.textContent=S.pz.toFixed(2);
 }
-['scale','height','rot','posY'].forEach(id=>$(id).addEventListener('input',apply));
-$('gear').onclick=()=>$('panel').classList.toggle('open');
-$('presetPlan').onclick=()=>{Object.assign(state,{scale:1.05,height:.10,rot:0,posY:.012});setInputs();apply();toast('Mode plan lisible')};
-$('presetMaquette').onclick=()=>{Object.assign(state,{scale:.90,height:.35,rot:0,posY:.012});setInputs();apply();toast('Mode maquette basse')};
-$('save').onclick=()=>{localStorage.setItem('arPlanSettings',JSON.stringify(state));toast('Sauvegardé')};
-$('reset').onclick=()=>{localStorage.removeItem('arPlanSettings');Object.assign(state,{scale:1,height:1,rot:0,posY:.01});setInputs();apply();toast('Reset')};
-$('copy').onclick=()=>{const t=JSON.stringify(state); navigator.clipboard&&navigator.clipboard.writeText(t); toast('Réglages copiés')};
-$('toggleBase').onclick=function(){baseVisible=!baseVisible;$('base').setAttribute('visible',baseVisible);this.textContent=baseVisible?'Masquer base':'Afficher base'};
-marker.addEventListener('markerFound',()=>{$('status').classList.add('ok');$('stxt').textContent='HIRO détecté'});
-marker.addEventListener('markerLost',()=>{$('status').classList.remove('ok');$('stxt').textContent='Vise HIRO'});
-// gestes: un doigt rotation, pinch zoom
-let lastX=null, lastDist=null;
-window.addEventListener('touchstart',e=>{if(e.target.closest('#panel')||e.target.id==='gear')return; if(e.touches.length===1) lastX=e.touches[0].clientX; if(e.touches.length===2){lastDist=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY)}} ,{passive:true});
-window.addEventListener('touchmove',e=>{if(e.target.closest('#panel')||e.target.id==='gear')return; if(e.touches.length===1&&lastX!=null){let dx=e.touches[0].clientX-lastX; lastX=e.touches[0].clientX; $('rot').value=Math.max(-180,Math.min(180,parseFloat($('rot').value)+dx*.35)); apply()} if(e.touches.length===2&&lastDist){let d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY); let ns=parseFloat($('scale').value)*(d/lastDist); lastDist=d; $('scale').value=Math.max(.35,Math.min(2.2,ns)); apply()}},{passive:true});
-window.addEventListener('load',()=>{try{const saved=JSON.parse(localStorage.getItem('arPlanSettings')); if(saved) Object.assign(state,saved);}catch(e){} setInputs(); apply();});
+function load(){try{let d=JSON.parse(localStorage.getItem('planARv2')); if(d){Object.assign(S,d);write();}}catch(e){} apply();}
+function save(){read();localStorage.setItem('planARv2',JSON.stringify(S));}
+inputs.forEach(id=>document.getElementById(id).addEventListener('input',apply));
+gear.onclick=()=>panel.classList.toggle('open');
+bFit.onclick=()=>{S={scale:1.05,sy:1,rot:S.rot||0,px:0,pz:0};write();apply();}
+bRelief.onclick=()=>{S.sy=Math.min(3,S.sy+0.4);write();apply();}
+bTurn.onclick=()=>{S.rot=(S.rot+90); if(S.rot>180)S.rot-=360; write();apply();}
+bReset.onclick=()=>{S={scale:1,sy:1,rot:0,px:0,pz:0};write();apply();localStorage.removeItem('planARv2');}
+bSave.onclick=()=>{save();panel.classList.remove('open');}
+bCopy.onclick=()=>{read();let txt=JSON.stringify(S);navigator.clipboard&&navigator.clipboard.writeText(txt);}
+hiro.addEventListener('markerFound',()=>{statusEl.classList.remove('lost');stxt.textContent='HIRO détecté';});
+hiro.addEventListener('markerLost',()=>{statusEl.classList.add('lost');stxt.textContent='Vise HIRO';});
+
+// gestes : un doigt rotation, deux doigts zoom
+let mode='',x0=0,rot0=0,d0=0,scale0=1;
+function dist(t){let dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY;return Math.hypot(dx,dy)}
+document.addEventListener('touchstart',e=>{
+ if(panel.classList.contains('open')) return;
+ if(e.touches.length===1){mode='rot';x0=e.touches[0].clientX;rot0=S.rot;}
+ if(e.touches.length===2){mode='zoom';d0=dist(e.touches);scale0=S.scale;}
+},{passive:false});
+document.addEventListener('touchmove',e=>{
+ if(panel.classList.contains('open')) return;
+ e.preventDefault();
+ if(mode==='rot'&&e.touches.length===1){S.rot=rot0+(e.touches[0].clientX-x0)*0.45; if(S.rot>180)S.rot-=360;if(S.rot<-180)S.rot+=360;write();apply();}
+ if(mode==='zoom'&&e.touches.length===2){S.scale=Math.max(.35,Math.min(2.2,scale0*(dist(e.touches)/d0)));write();apply();}
+},{passive:false});
+document.addEventListener('touchend',()=>{mode='';},{passive:false});
+window.addEventListener('load',load);
 </script>
 </body>
 </html>
