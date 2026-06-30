@@ -3,68 +3,44 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Test marqueur</title>
-<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
-<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
+<title>Test AR v140</title>
+<script src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
 <style>
- html{background:#000}
- body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;background:transparent;font-family:Arial}
- video, #arjsVideo{position:fixed!important;top:0!important;left:0!important;
-   width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:1!important}
- .a-canvas, canvas.a-canvas{position:fixed!important;top:0!important;left:0!important;
-   width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
- #start{position:fixed;inset:0;z-index:100000;display:flex;flex-direction:column;
-   align-items:center;justify-content:center;background:#0b1220;color:#fff;text-align:center;padding:24px}
- #startBtn{background:#f97316;color:#fff;border:none;border-radius:14px;padding:18px 34px;font-size:18px;font-weight:bold}
+ html,body{margin:0;padding:0;overflow:hidden;background:#000}
  #log{position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:rgba(0,0,0,.8);
-   color:#0f0;font-size:11px;line-height:1.4;padding:8px;border-radius:8px;max-height:30%;overflow:auto;white-space:pre-wrap;display:none}
- .overlay{position:fixed;top:8px;left:8px;right:8px;z-index:9999;color:#fff;
-   background:rgba(0,0,0,.55);border-radius:10px;padding:8px;font-size:13px;display:none}
- .badge{background:#dc2626;color:#fff;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:bold}
+   color:#0f0;font:11px Arial;line-height:1.4;padding:8px;border-radius:8px;max-height:28%;overflow:auto;white-space:pre-wrap}
+ .ov{position:fixed;top:8px;left:8px;right:8px;z-index:9999;color:#fff;
+   background:rgba(220,38,38,.85);border-radius:10px;padding:8px;font:13px Arial}
 </style>
 </head>
 <body>
-<div id="start"><button id="startBtn">▶ Démarrer la caméra</button></div>
-<div class="overlay" id="ov"><span class="badge">v130 TEST CUBE SEUL</span><br>Vise le Hiro. Un cube doit apparaître dessus.</div>
+<div class="ov">v140 — scène EN DUR. Vise le Hiro, le cube rouge doit apparaître.</div>
 <div id="log">Démarrage…</div>
-<div id="sceneHost"></div>
+
+<!-- Scène écrite directement dans le HTML, PAS injectée par JS -->
+<a-scene embedded vr-mode-ui="enabled: false"
+         renderer="alpha: true; antialias: true"
+         arjs="sourceType: webcam; debugUIEnabled: false;">
+  <a-marker id="mk" preset="hiro">
+    <a-box position="0 0.5 0" material="color: red;"></a-box>
+    <a-box position="0 1.5 0" scale="0.5 0.5 0.5" material="color: #00ff66; wireframe: true;"></a-box>
+  </a-marker>
+  <a-entity camera></a-entity>
+</a-scene>
 
 <script>
   var L=document.getElementById('log');
   function log(m){ L.textContent += "\n" + m; }
   window.addEventListener('error', function(e){ log("ERR: " + (e.message||"(sans message)")); });
   window.addEventListener('arjs-video-loaded', function(){ log("Camera OK"); });
-
-  document.getElementById('startBtn').addEventListener('click', function(){
-    document.getElementById('start').style.display='none';
-    document.getElementById('ov').style.display='block';
-    L.style.display='block';
-
-    log("AFRAME="+(window.AFRAME?AFRAME.version:"ABSENT")+" | THREE r"+(AFRAME&&AFRAME.THREE?AFRAME.THREE.REVISION:"?"));
-    var ok=!!(AFRAME.systems&&AFRAME.systems.arjs)||!!(AFRAME.components&&AFRAME.components.arjs)||!!(window.THREEx&&window.THREEx.ArToolkitContext);
-    log("AR.js="+(ok?"OK":"ABSENT"));
-
-    // SCÈNE MINIMALE : aucun modèle, aucun a-assets. Juste 2 cubes.
-    document.getElementById('sceneHost').innerHTML =
-      '<a-scene embedded vr-mode-ui="enabled: false"' +
-      ' renderer="alpha: true; antialias: true"' +
-      ' arjs="sourceType: webcam; debugUIEnabled: false;">' +
-      '  <a-marker id="mk" preset="hiro">' +
-      '    <a-box position="0 0.5 0" material="color: red;"></a-box>' +
-      '    <a-box position="0 1.5 0" scale="0.5 0.5 0.5" material="color: #00ff66; wireframe: true;"></a-box>' +
-      '  </a-marker>' +
-      '  <a-entity camera></a-entity>' +
-      '</a-scene>';
-
+  window.addEventListener('load', function(){
+    log("AFRAME="+(window.AFRAME?AFRAME.version:"ABSENT")+" r"+(AFRAME&&AFRAME.THREE?AFRAME.THREE.REVISION:"?"));
+    var mk=document.getElementById('mk');
+    mk.addEventListener('markerFound',function(){ log(">>> MARQUEUR DETECTE — cube ?"); });
+    mk.addEventListener('markerLost',function(){ log("(perdu)"); });
     var s=document.querySelector('a-scene');
     s.addEventListener('loaded',function(){ log("Scene prete"); });
-    setTimeout(function(){
-      var mk=document.getElementById('mk');
-      if(mk){
-        mk.addEventListener('markerFound',function(){ log(">>> MARQUEUR DETECTE — cube visible ?"); });
-        mk.addEventListener('markerLost',function(){ log("(marqueur perdu)"); });
-      }
-    },400);
   });
 </script>
 </body>
