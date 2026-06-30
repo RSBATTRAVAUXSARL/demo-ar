@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Démo AR - Nendaz</title>
+
+  <!-- Versions ÉPINGLÉES et compatibles : A-Frame 1.6.0 + AR.js 3.4.7 -->
+  <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+  <script src="https://raw.githack.com/AR-js-org/AR.js/3.4.7/aframe/build/aframe-ar.js"></script>
+
+  <style>
+    html, body {
+      margin: 0;
+      overflow: hidden;
+      width: 100%;
+      height: 100%;
+      font-family: Arial, sans-serif;
+      background: #000;
+    }
+    .overlay {
+      position: fixed;
+      top: 10px; left: 10px; right: 10px;
+      z-index: 9999;
+      color: white;
+      background: rgba(0,0,0,0.62);
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 13px;
+      line-height: 1.35;
+      pointer-events: none;
+    }
+    .badge {
+      display: inline-block;
+      background: #f97316;
+      color: white;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-weight: bold;
+      font-size: 11px;
+      margin-bottom: 5px;
+    }
+    .footer {
+      position: fixed;
+      left: 10px; right: 10px; bottom: 10px;
+      z-index: 9999;
+      color: white;
+      background: rgba(0,0,0,0.62);
+      border-radius: 12px;
+      padding: 8px 10px;
+      font-size: 12px;
+      text-align: center;
+      pointer-events: none;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="overlay">
+    <span class="badge">AR MARKER</span><br>
+    Modèle 3D Nendaz<br>
+    Vise le marqueur HIRO imprimé sur la feuille. Le bâtiment se verrouille dessus.
+  </div>
+
+  <div class="footer">
+    Si le modèle est trop grand/petit : modifie la valeur <b>scale</b> ci-dessous dans le code.
+  </div>
+
+  <!--
+    ===========================================================
+    RÉGLAGES À MODIFIER ICI (les 3 lignes scale/position/rotation
+    sur la balise <a-entity> plus bas) :
+      scale    : taille du modèle      (trop petit -> 0.05 0.05 0.05 / trop grand -> 0.01 0.01 0.01)
+      position : décalage sur le marqueur
+      rotation : orientation (si bâtiment couché -> teste 0 0 0)
+    Le modèle DOIT s'appeler exactement  model.glb  et être dans le
+    MÊME dossier que ce fichier index.html (même repo GitHub).
+    ===========================================================
+  -->
+
+  <a-scene
+    embedded
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true; precision: medium;"
+    arjs="sourceType: webcam; trackingMethod: best; debugUIEnabled: false;">
+
+    <a-assets>
+      <a-asset-item id="buildingModel" src="model.glb"></a-asset-item>
+    </a-assets>
+
+    <a-marker
+      preset="hiro"
+      smooth="true"
+      smoothCount="12"
+      smoothTolerance="0.01"
+      smoothThreshold="5">
+
+      <a-entity
+        gltf-model="#buildingModel"
+        position="0 0 0"
+        rotation="-90 0 0"
+        scale="0.02 0.02 0.02">
+      </a-entity>
+
+    </a-marker>
+
+    <a-entity camera></a-entity>
+  </a-scene>
+</body>
+</html>
