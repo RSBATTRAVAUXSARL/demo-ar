@@ -8,22 +8,41 @@
 <script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
 <style>
  html{background:#000}
- body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;background:transparent;font-family:Arial}
- /* Caméra plein écran sous le canvas 3D */
- video, #arjsVideo{position:fixed!important;top:0!important;left:0!important;
+ body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;background:transparent;
+   font-family:-apple-system,Arial,sans-serif}
+ video,#arjsVideo{position:fixed!important;top:0!important;left:0!important;
    width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:1!important}
- .a-canvas, canvas.a-canvas{position:fixed!important;top:0!important;left:0!important;
+ .a-canvas,canvas.a-canvas{position:fixed!important;top:0!important;left:0!important;
    width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
- .ov{position:fixed;top:8px;left:8px;right:8px;z-index:9999;color:#fff;
-   background:rgba(0,0,0,.55);border-radius:10px;padding:8px;font-size:13px}
- .badge{background:#16a34a;color:#fff;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:bold}
- #log{position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:rgba(0,0,0,.75);
-   color:#0f0;font-size:11px;line-height:1.4;padding:8px;border-radius:8px;max-height:24%;overflow:auto;white-space:pre-wrap}
+
+ /* Bouton engrenage pour ouvrir/fermer le panneau */
+ #gear{position:fixed;top:12px;right:12px;z-index:10001;width:48px;height:48px;border:none;
+   border-radius:50%;background:#2563eb;color:#fff;font-size:22px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
+
+ /* Panneau de réglages */
+ #panel{position:fixed;left:0;right:0;bottom:0;z-index:10000;background:rgba(15,23,42,.95);
+   color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-bottom));border-top-left-radius:18px;
+   border-top-right-radius:18px;box-shadow:0 -6px 24px rgba(0,0,0,.5);max-height:70vh;overflow:auto;
+   transform:translateY(0);transition:transform .25s}
+ #panel.hidden{transform:translateY(105%)}
+ #panel h2{margin:0 0 10px;font-size:16px}
+ .row{margin:10px 0}
+ .row label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+ .row label b{color:#7dd3fc}
+ .row input[type=range]{width:100%;height:30px}
+ .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+ .btns button{flex:1;min-width:120px;padding:13px;border:none;border-radius:10px;font-size:14px;font-weight:bold;color:#fff}
+ .save{background:#16a34a}.reset{background:#64748b}.copy{background:#f97316}.cube{background:#7c3aed}
+ #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:10002;
+   background:#16a34a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s}
+ .hint{position:fixed;top:10px;left:10px;z-index:9999;color:#fff;background:rgba(0,0,0,.5);
+   border-radius:8px;padding:6px 10px;font-size:12px}
 </style>
 </head>
 <body>
-<div class="ov"><span class="badge">Démo AR Nendaz v150</span><br>Vise le marqueur HIRO — le bâtiment apparaît dessus.</div>
-<div id="log">Démarrage…</div>
+<div class="hint">Vise le marqueur HIRO</div>
+<button id="gear">⚙︎</button>
+<div id="toast"></div>
 
 <a-scene embedded vr-mode-ui="enabled: false"
          renderer="alpha: true; antialias: true; precision: medium"
@@ -31,33 +50,101 @@
   <a-assets timeout="20000">
     <a-asset-item id="buildingModel" src="model.glb"></a-asset-item>
   </a-assets>
-
   <a-marker id="mk" preset="hiro" smooth="true" smoothCount="10">
-    <!-- petit repère rouge pour confirmer la détection (à retirer plus tard) -->
-    <a-box position="0 0.1 0" scale="0.15 0.15 0.15" material="color: red;"></a-box>
-    <!-- ton bâtiment -->
-    <a-entity gltf-model="#buildingModel"
+    <a-box id="ref" position="0 0.1 0" scale="0.15 0.15 0.15" material="color: red;"></a-box>
+    <a-entity id="model" gltf-model="#buildingModel"
               position="0 0 0" rotation="-90 0 0" scale="0.05 0.05 0.05"></a-entity>
   </a-marker>
-
   <a-entity camera></a-entity>
 </a-scene>
 
+<div id="panel">
+  <h2>Réglages du bâtiment</h2>
+
+  <div class="row"><label>Échelle <b id="vS">0.050</b></label>
+    <input type="range" id="s" min="0.005" max="0.25" step="0.005" value="0.05"></div>
+
+  <div class="row"><label>Rotation X (couché/debout) <b id="vRX">-90</b>°</label>
+    <input type="range" id="rx" min="-180" max="180" step="5" value="-90"></div>
+  <div class="row"><label>Rotation Y (pivoter) <b id="vRY">0</b>°</label>
+    <input type="range" id="ry" min="-180" max="180" step="5" value="0"></div>
+  <div class="row"><label>Rotation Z (incliner) <b id="vRZ">0</b>°</label>
+    <input type="range" id="rz" min="-180" max="180" step="5" value="0"></div>
+
+  <div class="row"><label>Position X (gauche/droite) <b id="vPX">0.00</b></label>
+    <input type="range" id="px" min="-1.5" max="1.5" step="0.05" value="0"></div>
+  <div class="row"><label>Position Y (hauteur) <b id="vPY">0.00</b></label>
+    <input type="range" id="py" min="-1.5" max="1.5" step="0.05" value="0"></div>
+  <div class="row"><label>Position Z (avant/arrière) <b id="vPZ">0.00</b></label>
+    <input type="range" id="pz" min="-1.5" max="1.5" step="0.05" value="0"></div>
+
+  <div class="btns">
+    <button class="save" id="bSave">✓ Figer / Sauvegarder</button>
+    <button class="reset" id="bReset">↺ Réinitialiser</button>
+    <button class="copy" id="bCopy">⧉ Copier les réglages</button>
+    <button class="cube" id="bCube">Masquer repère rouge</button>
+  </div>
+</div>
+
 <script>
-  var L=document.getElementById('log');
-  function log(m){ L.textContent += "\n" + m; }
-  window.addEventListener('error', function(e){ log("ERR: " + (e.message||"(sans message)")); });
-  window.addEventListener('arjs-video-loaded', function(){ log("Camera OK"); });
-  window.addEventListener('load', function(){
-    log("AFRAME="+(window.AFRAME?AFRAME.version:"ABSENT")+" r"+(AFRAME&&AFRAME.THREE?AFRAME.THREE.REVISION:"?"));
-    var mk=document.getElementById('mk');
-    mk.addEventListener('markerFound',function(){ log(">>> MARQUEUR DETECTE"); });
-    mk.addEventListener('markerLost',function(){ log("(perdu)"); });
-    var m=document.querySelector('[gltf-model]');
-    m.addEventListener('model-loaded',function(){ log("Batiment charge OK"); });
-    m.addEventListener('model-error',function(){ log("Batiment .glb ERREUR"); });
-    document.querySelector('a-scene').addEventListener('loaded',function(){ log("Scene prete"); });
-  });
+  var ids=['s','rx','ry','rz','px','py','pz'];
+  var def={s:0.05,rx:-90,ry:0,rz:0,px:0,py:0,pz:0};
+  var refVisible=true;
+
+  function val(id){return parseFloat(document.getElementById(id).value);}
+  function setVal(id,v){document.getElementById(id).value=v;}
+
+  function apply(){
+    var s=val('s');
+    document.getElementById('model').setAttribute('scale', s+' '+s+' '+s);
+    document.getElementById('model').setAttribute('rotation', val('rx')+' '+val('ry')+' '+val('rz'));
+    document.getElementById('model').setAttribute('position', val('px')+' '+val('py')+' '+val('pz'));
+    document.getElementById('vS').textContent=s.toFixed(3);
+    document.getElementById('vRX').textContent=val('rx');
+    document.getElementById('vRY').textContent=val('ry');
+    document.getElementById('vRZ').textContent=val('rz');
+    document.getElementById('vPX').textContent=val('px').toFixed(2);
+    document.getElementById('vPY').textContent=val('py').toFixed(2);
+    document.getElementById('vPZ').textContent=val('pz').toFixed(2);
+  }
+  function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.style.opacity=1;
+    setTimeout(function(){t.style.opacity=0;},1800);}
+
+  // Charge les réglages sauvegardés (localStorage marche sur GitHub Pages)
+  function load(){
+    try{var d=JSON.parse(localStorage.getItem('arSettings'));
+      if(d){ids.forEach(function(id){if(d[id]!=null)setVal(id,d[id]);});}}catch(e){}
+  }
+  function save(){
+    var d={};ids.forEach(function(id){d[id]=val(id);});
+    localStorage.setItem('arSettings',JSON.stringify(d));
+    toast('Réglages sauvegardés ✓');
+  }
+
+  ids.forEach(function(id){document.getElementById(id).addEventListener('input',apply);});
+
+  document.getElementById('bSave').onclick=save;
+  document.getElementById('bReset').onclick=function(){
+    ids.forEach(function(id){setVal(id,def[id]);});apply();
+    localStorage.removeItem('arSettings');toast('Réinitialisé');
+  };
+  document.getElementById('bCopy').onclick=function(){
+    var txt='scale="'+val('s')+' '+val('s')+' '+val('s')+'" '+
+            'rotation="'+val('rx')+' '+val('ry')+' '+val('rz')+'" '+
+            'position="'+val('px')+' '+val('py')+' '+val('pz')+'"';
+    if(navigator.clipboard){navigator.clipboard.writeText(txt);}
+    toast('Copié : '+txt);
+  };
+  document.getElementById('bCube').onclick=function(){
+    refVisible=!refVisible;
+    document.getElementById('ref').setAttribute('visible',refVisible);
+    this.textContent=refVisible?'Masquer repère rouge':'Afficher repère rouge';
+  };
+  document.getElementById('gear').onclick=function(){
+    document.getElementById('panel').classList.toggle('hidden');
+  };
+
+  window.addEventListener('load',function(){ load(); apply(); });
 </script>
 </body>
 </html>
