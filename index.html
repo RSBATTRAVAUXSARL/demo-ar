@@ -4,56 +4,117 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Démo AR - Nendaz</title>
+
 <script src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
+
 <style>
- html{background:#000}
- body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;background:transparent;
-   font-family:-apple-system,Arial,sans-serif}
- video,#arjsVideo{position:fixed!important;top:0!important;left:0!important;
-   width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:1!important}
- .a-canvas,canvas.a-canvas{position:fixed!important;top:0!important;left:0!important;
-   width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
-
- /* Bouton engrenage pour ouvrir/fermer le panneau */
- #gear{position:fixed;top:12px;right:12px;z-index:10001;width:48px;height:48px;border:none;
-   border-radius:50%;background:#2563eb;color:#fff;font-size:22px;box-shadow:0 4px 14px rgba(0,0,0,.4)}
-
- /* Panneau de réglages */
- #panel{position:fixed;left:0;right:0;bottom:0;z-index:10000;background:rgba(15,23,42,.95);
-   color:#fff;padding:14px 16px calc(14px + env(safe-area-inset-bottom));border-top-left-radius:18px;
-   border-top-right-radius:18px;box-shadow:0 -6px 24px rgba(0,0,0,.5);max-height:70vh;overflow:auto;
-   transform:translateY(0);transition:transform .25s}
- #panel.hidden{transform:translateY(105%)}
- #panel h2{margin:0 0 10px;font-size:16px}
- .row{margin:10px 0}
- .row label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
- .row label b{color:#7dd3fc}
- .row input[type=range]{width:100%;height:30px}
- .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
- .btns button{flex:1;min-width:120px;padding:13px;border:none;border-radius:10px;font-size:14px;font-weight:bold;color:#fff}
- .save{background:#16a34a}.reset{background:#64748b}.copy{background:#f97316}.cube{background:#7c3aed}
- #toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);z-index:10002;
-   background:#16a34a;color:#fff;padding:10px 16px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s}
- .hint{position:fixed;top:10px;left:10px;z-index:9999;color:#fff;background:rgba(0,0,0,.5);
-   border-radius:8px;padding:6px 10px;font-size:12px}
+  :root{
+    --bg:rgba(2,6,23,.82);
+    --line:rgba(255,255,255,.18);
+    --blue:#2563eb;
+    --orange:#f97316;
+    --green:#16a34a;
+    --red:#ef4444;
+    --txt:#fff;
+    --muted:#cbd5e1;
+  }
+  html,body{
+    margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#000;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:var(--txt);
+    -webkit-user-select:none;user-select:none;
+  }
+  video,#arjsVideo{
+    position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;
+    object-fit:cover!important;z-index:1!important;background:#000!important;
+  }
+  .a-canvas,canvas.a-canvas{
+    position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;
+    z-index:2!important;background:transparent!important;
+  }
+  .hud{
+    position:fixed;z-index:9999;left:10px;right:82px;top:calc(10px + env(safe-area-inset-top));
+    background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:10px 12px;
+    box-shadow:0 8px 24px rgba(0,0,0,.32);backdrop-filter:blur(8px);
+  }
+  .hud .top{display:flex;gap:8px;align-items:center;justify-content:space-between;margin-bottom:6px}
+  .badge{display:inline-flex;align-items:center;gap:6px;font-weight:800;font-size:12px;border-radius:999px;padding:4px 8px;background:var(--orange)}
+  .dot{width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block}.dot.ok{background:#22c55e}
+  .title{font-size:15px;font-weight:800;line-height:1.15}.sub{font-size:11px;color:var(--muted);line-height:1.25}
+  .metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:5px;margin-top:8px}
+  .metric{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.10);border-radius:10px;padding:6px 7px;min-height:34px}
+  .metric b{display:block;font-size:13px;line-height:1.05}.metric span{font-size:10px;color:var(--muted)}
+  .legend{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;font-size:10px;color:#fee2e2}.leg{display:flex;align-items:center;gap:4px}.sw{width:18px;height:4px;background:red;border-radius:999px}
+  #gear{
+    position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;z-index:10002;width:56px;height:56px;border:none;
+    border-radius:50%;background:var(--blue);color:#fff;font-size:24px;box-shadow:0 8px 24px rgba(0,0,0,.45)
+  }
+  #panel{
+    position:fixed;left:0;right:0;bottom:0;z-index:10001;background:rgba(15,23,42,.97);color:#fff;
+    padding:14px 16px calc(14px + env(safe-area-inset-bottom));border-top-left-radius:18px;border-top-right-radius:18px;
+    box-shadow:0 -8px 28px rgba(0,0,0,.52);max-height:76vh;overflow:auto;transform:translateY(105%);transition:transform .22s ease;
+  }
+  #panel.open{transform:translateY(0)}
+  #panel h2{font-size:16px;margin:0 0 10px}.row{margin:9px 0}.row label{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}.row label b{color:#7dd3fc}.row input[type=range]{width:100%}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}.btns{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px}
+  button.action{border:none;border-radius:12px;padding:12px 10px;font-weight:800;color:white;background:#475569;font-size:13px}.save{background:var(--green)!important}.preset{background:#7c3aed!important}.danger{background:#64748b!important}.copy{background:#0ea5e9!important}.hide{background:#f97316!important}
+  #toast{position:fixed;left:50%;bottom:calc(86px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:10003;background:#16a34a;color:white;padding:10px 16px;border-radius:999px;font-size:13px;opacity:0;transition:opacity .22s;white-space:nowrap}
+  @media(max-width:420px){.hud{right:78px}.metrics{grid-template-columns:1fr 1fr}.metric b{font-size:12px}.title{font-size:14px}.sub{display:none}}
 </style>
 </head>
 <body>
-<div class="hint">Vise le marqueur HIRO</div>
-<button id="gear">⚙︎</button>
+
+<div class="hud" id="hud">
+  <div class="top">
+    <div class="badge"><span class="dot" id="trackDot"></span><span id="trackText">Vise HIRO</span></div>
+    <div class="sub">Démo AR Nendaz</div>
+  </div>
+  <div class="title">Dalles, trémies et voiles depuis le JSON</div>
+  <div class="sub">Pose la feuille à plat. Le repère rouge marque l’origine du modèle.</div>
+
+  <div class="metrics">
+    <div class="metric"><b>81.70 ml</b><span>Voiles</span></div>
+    <div class="metric"><b>457.51 m²</b><span>Coffrage</span></div>
+    <div class="metric"><b>41.18 m³</b><span>Volume murs</span></div>
+    <div class="metric"><b>212.86 m²</b><span>Dalle brute</span></div>
+    <div class="metric"><b>17.41 m²</b><span>Trémies total</span></div>
+    <div class="metric"><b>3</b><span>Ouvertures</span></div>
+  </div>
+  <div class="legend">
+    <div class="leg"><span class="sw"></span>T1 5.95 m²</div>
+    <div class="leg"><span class="sw"></span>T2 5.00 m²</div>
+    <div class="leg"><span class="sw"></span>T3 6.45 m²</div>
+  </div>
+</div>
+
+<button id="gear" aria-label="Réglages">⚙︎</button>
 <div id="toast"></div>
 
-<a-scene embedded vr-mode-ui="enabled: false"
-         renderer="alpha: true; antialias: true; precision: medium"
-         arjs="sourceType: webcam; debugUIEnabled: false;">
-  <a-assets timeout="20000">
+<a-scene embedded vr-mode-ui="enabled:false"
+  renderer="alpha:true; antialias:true; precision:medium; logarithmicDepthBuffer:true; colorManagement:true"
+  arjs="sourceType:webcam; trackingMethod:best; debugUIEnabled:false; detectionMode:mono;">
+
+  <a-assets timeout="30000">
     <a-asset-item id="buildingModel" src="model.glb"></a-asset-item>
   </a-assets>
-  <a-marker id="mk" preset="hiro" smooth="true" smoothCount="10">
-    <a-box id="ref" position="0 0.1 0" scale="0.15 0.15 0.15" material="color: red;"></a-box>
-    <a-entity id="model" gltf-model="#buildingModel"
-              position="0 0 0" rotation="-90 0 0" scale="0.05 0.05 0.05"></a-entity>
+
+  <a-marker id="mk" preset="hiro" smooth="true" smoothCount="16" smoothTolerance="0.008" smoothThreshold="3">
+
+    <!-- Repère : rouge = origine/centre du marqueur -->
+    <a-box id="ref" position="0 0.03 0" scale="0.08 0.08 0.08" material="color:#ef0000; opacity:0.92"></a-box>
+
+    <!-- Socle transparent : aide à voir l’échelle sur la feuille -->
+    <a-plane id="base" rotation="-90 0 0" position="0 0.002 0" width="2.2" height="1.25" material="color:#38bdf8; opacity:0.12; transparent:true; side:double"></a-plane>
+
+    <!-- Wrapper : on sépare rotation/position/échelle pour éviter l'effet écrasé -->
+    <a-entity id="rig" position="0 0 0" rotation="0 90 0" scale="0.045 0.045 0.045">
+      <a-entity id="model" gltf-model="#buildingModel" position="0 0 0" rotation="0 0 0" scale="1 1 1"></a-entity>
+    </a-entity>
+
+    <!-- Petit panneau texte AR, désactivable -->
+    <a-entity id="arLabel" position="-1.05 0.05 -0.72" rotation="-90 0 0" visible="false"
+      text="value: Voiles 81.70 ml | Coffrage 457.51 m2 | Tremies 17.41 m2; align:left; color:#0f172a; width:1.6; wrapCount:44"></a-entity>
+
   </a-marker>
   <a-entity camera></a-entity>
 </a-scene>
@@ -61,90 +122,91 @@
 <div id="panel">
   <h2>Réglages du bâtiment</h2>
 
-  <div class="row"><label>Échelle <b id="vS">0.050</b></label>
-    <input type="range" id="s" min="0.005" max="0.25" step="0.005" value="0.05"></div>
+  <div class="grid3">
+    <button class="action preset" data-preset="flat1">À plat 1</button>
+    <button class="action preset" data-preset="flat2">À plat 2</button>
+    <button class="action preset" data-preset="flat3">À plat 3</button>
+  </div>
 
-  <div class="row"><label>Rotation X (couché/debout) <b id="vRX">-90</b>°</label>
-    <input type="range" id="rx" min="-180" max="180" step="5" value="-90"></div>
-  <div class="row"><label>Rotation Y (pivoter) <b id="vRY">0</b>°</label>
-    <input type="range" id="ry" min="-180" max="180" step="5" value="0"></div>
-  <div class="row"><label>Rotation Z (incliner) <b id="vRZ">0</b>°</label>
-    <input type="range" id="rz" min="-180" max="180" step="5" value="0"></div>
+  <div class="row"><label>Échelle générale <b id="vS">0.045</b></label><input type="range" id="s" min="0.005" max="0.18" step="0.0025" value="0.045"></div>
 
-  <div class="row"><label>Position X (gauche/droite) <b id="vPX">0.00</b></label>
-    <input type="range" id="px" min="-1.5" max="1.5" step="0.05" value="0"></div>
-  <div class="row"><label>Position Y (hauteur) <b id="vPY">0.00</b></label>
-    <input type="range" id="py" min="-1.5" max="1.5" step="0.05" value="0"></div>
-  <div class="row"><label>Position Z (avant/arrière) <b id="vPZ">0.00</b></label>
-    <input type="range" id="pz" min="-1.5" max="1.5" step="0.05" value="0"></div>
+  <div class="grid3">
+    <div class="row"><label>X largeur <b id="vSX">1.00</b></label><input type="range" id="sx" min="0.20" max="3.00" step="0.05" value="1"></div>
+    <div class="row"><label>Y hauteur <b id="vSY">1.00</b></label><input type="range" id="sy" min="0.20" max="4.00" step="0.05" value="1"></div>
+    <div class="row"><label>Z profondeur <b id="vSZ">1.00</b></label><input type="range" id="sz" min="0.20" max="3.00" step="0.05" value="1"></div>
+  </div>
+
+  <div class="grid3">
+    <div class="row"><label>Rot X <b id="vRX">0</b>°</label><input type="range" id="rx" min="-180" max="180" step="5" value="0"></div>
+    <div class="row"><label>Rot Y <b id="vRY">90</b>°</label><input type="range" id="ry" min="-180" max="180" step="5" value="90"></div>
+    <div class="row"><label>Rot Z <b id="vRZ">0</b>°</label><input type="range" id="rz" min="-180" max="180" step="5" value="0"></div>
+  </div>
+
+  <div class="grid3">
+    <div class="row"><label>Pos X <b id="vPX">0.00</b></label><input type="range" id="px" min="-1.5" max="1.5" step="0.025" value="0"></div>
+    <div class="row"><label>Pos Y hauteur <b id="vPY">0.00</b></label><input type="range" id="py" min="-1.0" max="1.5" step="0.025" value="0"></div>
+    <div class="row"><label>Pos Z <b id="vPZ">0.00</b></label><input type="range" id="pz" min="-1.5" max="1.5" step="0.025" value="0"></div>
+  </div>
 
   <div class="btns">
-    <button class="save" id="bSave">✓ Figer / Sauvegarder</button>
-    <button class="reset" id="bReset">↺ Réinitialiser</button>
-    <button class="copy" id="bCopy">⧉ Copier les réglages</button>
-    <button class="cube" id="bCube">Masquer repère rouge</button>
+    <button class="action save" id="bSave">✓ Sauvegarder</button>
+    <button class="action copy" id="bCopy">⧉ Copier réglages</button>
+    <button class="action hide" id="bRef">Masquer repère</button>
+    <button class="action danger" id="bReset">↺ Reset</button>
   </div>
 </div>
 
 <script>
-  var ids=['s','rx','ry','rz','px','py','pz'];
-  var def={s:0.05,rx:-90,ry:0,rz:0,px:0,py:0,pz:0};
-  var refVisible=true;
+(function(){
+  const ids=['s','sx','sy','sz','rx','ry','rz','px','py','pz'];
+  const def={s:0.045,sx:1,sy:1,sz:1,rx:0,ry:90,rz:0,px:0,py:0,pz:0};
+  const presets={
+    flat1:{rx:0,ry:90,rz:0},
+    flat2:{rx:90,ry:0,rz:0},
+    flat3:{rx:0,ry:0,rz:0}
+  };
+  let refVisible=true;
 
-  function val(id){return parseFloat(document.getElementById(id).value);}
-  function setVal(id,v){document.getElementById(id).value=v;}
+  function el(id){return document.getElementById(id)}
+  function v(id){return parseFloat(el(id).value)}
+  function set(id,val){el(id).value=val}
+  function toast(msg){const t=el('toast');t.textContent=msg;t.style.opacity=1;setTimeout(()=>t.style.opacity=0,1600)}
+  function n(num,d){return Number(num).toFixed(d)}
 
   function apply(){
-    var s=val('s');
-    document.getElementById('model').setAttribute('scale', s+' '+s+' '+s);
-    document.getElementById('model').setAttribute('rotation', val('rx')+' '+val('ry')+' '+val('rz'));
-    document.getElementById('model').setAttribute('position', val('px')+' '+val('py')+' '+val('pz'));
-    document.getElementById('vS').textContent=s.toFixed(3);
-    document.getElementById('vRX').textContent=val('rx');
-    document.getElementById('vRY').textContent=val('ry');
-    document.getElementById('vRZ').textContent=val('rz');
-    document.getElementById('vPX').textContent=val('px').toFixed(2);
-    document.getElementById('vPY').textContent=val('py').toFixed(2);
-    document.getElementById('vPZ').textContent=val('pz').toFixed(2);
-  }
-  function toast(msg){var t=document.getElementById('toast');t.textContent=msg;t.style.opacity=1;
-    setTimeout(function(){t.style.opacity=0;},1800);}
+    const s=v('s');
+    const scale=[s*v('sx'), s*v('sy'), s*v('sz')];
+    el('rig').setAttribute('scale', scale.join(' '));
+    el('rig').setAttribute('rotation', `${v('rx')} ${v('ry')} ${v('rz')}`);
+    el('rig').setAttribute('position', `${v('px')} ${v('py')} ${v('pz')}`);
 
-  // Charge les réglages sauvegardés (localStorage marche sur GitHub Pages)
-  function load(){
-    try{var d=JSON.parse(localStorage.getItem('arSettings'));
-      if(d){ids.forEach(function(id){if(d[id]!=null)setVal(id,d[id]);});}}catch(e){}
-  }
-  function save(){
-    var d={};ids.forEach(function(id){d[id]=val(id);});
-    localStorage.setItem('arSettings',JSON.stringify(d));
-    toast('Réglages sauvegardés ✓');
+    el('vS').textContent=n(s,3); el('vSX').textContent=n(v('sx'),2); el('vSY').textContent=n(v('sy'),2); el('vSZ').textContent=n(v('sz'),2);
+    el('vRX').textContent=v('rx'); el('vRY').textContent=v('ry'); el('vRZ').textContent=v('rz');
+    el('vPX').textContent=n(v('px'),2); el('vPY').textContent=n(v('py'),2); el('vPZ').textContent=n(v('pz'),2);
   }
 
-  ids.forEach(function(id){document.getElementById(id).addEventListener('input',apply);});
+  function save(){const d={};ids.forEach(id=>d[id]=v(id));localStorage.setItem('nendazArSettings',JSON.stringify(d));toast('Réglages sauvegardés ✓')}
+  function load(){try{const d=JSON.parse(localStorage.getItem('nendazArSettings'));if(d){ids.forEach(id=>{if(d[id]!=null)set(id,d[id])})}}catch(e){}}
+  function reset(){ids.forEach(id=>set(id,def[id]));localStorage.removeItem('nendazArSettings');apply();toast('Reset ✓')}
 
-  document.getElementById('bSave').onclick=save;
-  document.getElementById('bReset').onclick=function(){
-    ids.forEach(function(id){setVal(id,def[id]);});apply();
-    localStorage.removeItem('arSettings');toast('Réinitialisé');
+  ids.forEach(id=>el(id).addEventListener('input',apply));
+  el('gear').onclick=()=>el('panel').classList.toggle('open');
+  el('bSave').onclick=save;
+  el('bReset').onclick=reset;
+  el('bRef').onclick=function(){refVisible=!refVisible;el('ref').setAttribute('visible',refVisible);this.textContent=refVisible?'Masquer repère':'Afficher repère'};
+  el('bCopy').onclick=function(){
+    const txt=`position="${v('px')} ${v('py')} ${v('pz')}" rotation="${v('rx')} ${v('ry')} ${v('rz')}" scale="${n(v('s')*v('sx'),4)} ${n(v('s')*v('sy'),4)} ${n(v('s')*v('sz'),4)}"`;
+    if(navigator.clipboard) navigator.clipboard.writeText(txt);
+    toast('Réglages copiés')
   };
-  document.getElementById('bCopy').onclick=function(){
-    var txt='scale="'+val('s')+' '+val('s')+' '+val('s')+'" '+
-            'rotation="'+val('rx')+' '+val('ry')+' '+val('rz')+'" '+
-            'position="'+val('px')+' '+val('py')+' '+val('pz')+'"';
-    if(navigator.clipboard){navigator.clipboard.writeText(txt);}
-    toast('Copié : '+txt);
-  };
-  document.getElementById('bCube').onclick=function(){
-    refVisible=!refVisible;
-    document.getElementById('ref').setAttribute('visible',refVisible);
-    this.textContent=refVisible?'Masquer repère rouge':'Afficher repère rouge';
-  };
-  document.getElementById('gear').onclick=function(){
-    document.getElementById('panel').classList.toggle('hidden');
-  };
+  document.querySelectorAll('[data-preset]').forEach(btn=>btn.onclick=function(){const p=presets[this.dataset.preset];set('rx',p.rx);set('ry',p.ry);set('rz',p.rz);apply();toast(this.textContent)});
 
-  window.addEventListener('load',function(){ load(); apply(); });
+  const marker=el('mk'), dot=el('trackDot'), txt=el('trackText');
+  marker.addEventListener('markerFound',()=>{dot.classList.add('ok');txt.textContent='HIRO détecté'});
+  marker.addEventListener('markerLost',()=>{dot.classList.remove('ok');txt.textContent='Vise HIRO'});
+
+  window.addEventListener('load',()=>{load();apply();setTimeout(()=>toast('Clique ⚙︎ pour régler rotation/échelle'),700)});
+})();
 </script>
 </body>
 </html>
