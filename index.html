@@ -4,9 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Démo AR - Nendaz</title>
-<!-- Les 2 libs depuis jsDelivr + crossorigin = on verra les VRAIES erreurs -->
-<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
-<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
+<!-- COUPLE STABLE pour marqueurs : A-Frame 1.3.0 + AR.js 3.4.5 (THREE r150) -->
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/aframe@1.3.0/dist/aframe-master.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.5/aframe/build/aframe-ar.js"></script>
 <style>
  html{background:#000}
  body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;background:transparent;font-family:Arial}
@@ -19,10 +19,10 @@
  #start h1{font-size:22px;margin:0 0 10px}#start p{font-size:14px;opacity:.85;max-width:320px;margin:0 0 26px}
  #startBtn{background:#f97316;color:#fff;border:none;border-radius:14px;padding:18px 34px;font-size:18px;font-weight:bold}
  #log{position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:rgba(0,0,0,.8);
-   color:#0f0;font-size:11px;line-height:1.4;padding:8px;border-radius:8px;max-height:32%;overflow:auto;white-space:pre-wrap;display:none}
+   color:#0f0;font-size:11px;line-height:1.4;padding:8px;border-radius:8px;max-height:30%;overflow:auto;white-space:pre-wrap;display:none}
  .overlay{position:fixed;top:8px;left:8px;right:8px;z-index:9999;color:#fff;
    background:rgba(0,0,0,.55);border-radius:10px;padding:8px;font-size:13px;display:none}
- .badge{background:#2563eb;color:#fff;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:bold}
+ .badge{background:#16a34a;color:#fff;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:bold}
 </style>
 </head>
 <body>
@@ -31,7 +31,7 @@
   <p>Appuie sur Démarrer, autorise la caméra, puis vise le marqueur HIRO.</p>
   <button id="startBtn">▶ Démarrer la caméra</button>
 </div>
-<div class="overlay" id="ov"><span class="badge">VERSION v110</span><br>Vise le marqueur HIRO.</div>
+<div class="overlay" id="ov"><span class="badge">VERSION v120 (combo stable)</span><br>Vise le marqueur HIRO.</div>
 <div id="log">Démarrage…</div>
 <div id="sceneHost"></div>
 
@@ -59,7 +59,6 @@
       '  </a-assets>' +
       '  <a-marker id="mk" preset="hiro" smooth="true" smoothCount="10">' +
       '    <a-box position="0 0.5 0" scale="1 1 1" material="color: #ff2d2d;"></a-box>' +
-      '    <a-box position="0 1.6 0" scale="0.6 0.6 0.6" material="color: #2dff5a; wireframe: true;"></a-box>' +
       '    <a-entity gltf-model="#buildingModel" position="0 0 0" rotation="-90 0 0" scale="0.02 0.02 0.02"></a-entity>' +
       '  </a-marker>' +
       '  <a-entity camera></a-entity>' +
@@ -67,7 +66,6 @@
 
     var s=document.querySelector('a-scene');
     s.addEventListener('loaded',function(){ log("Scene prete"); });
-
     setTimeout(function(){
       var mk=document.getElementById('mk');
       if(mk){
