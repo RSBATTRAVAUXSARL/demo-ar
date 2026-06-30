@@ -4,73 +4,42 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Démo AR - Nendaz</title>
-<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
+<!-- Les 2 libs depuis jsDelivr + crossorigin = on verra les VRAIES erreurs -->
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
 <style>
- /* fond noir UNIQUEMENT sur html (calque du bas). body transparent : il ne doit
-    plus recouvrir la vidéo. C'était ça, l'écran noir. */
  html{background:#000}
  body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;background:transparent;font-family:Arial}
-
- /* Vidéo caméra : plein écran, AU-DESSUS du fond, EN DESSOUS du canvas 3D */
- video, #arjsVideo{
-   position:fixed!important;top:0!important;left:0!important;
-   width:100vw!important;height:100vh!important;
-   object-fit:cover!important;object-position:center!important;
-   z-index:1!important;
- }
- /* Canvas 3D : transparent, au-dessus de la vidéo */
- .a-canvas, canvas.a-canvas{
-   position:fixed!important;top:0!important;left:0!important;
-   width:100vw!important;height:100vh!important;
-   z-index:2!important;background:transparent!important;
- }
-
+ video, #arjsVideo{position:fixed!important;top:0!important;left:0!important;
+   width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:1!important}
+ .a-canvas, canvas.a-canvas{position:fixed!important;top:0!important;left:0!important;
+   width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
  #start{position:fixed;inset:0;z-index:100000;display:flex;flex-direction:column;
    align-items:center;justify-content:center;background:#0b1220;color:#fff;text-align:center;padding:24px}
- #start h1{font-size:22px;margin:0 0 10px}
- #start p{font-size:14px;opacity:.85;max-width:320px;line-height:1.4;margin:0 0 26px}
- #startBtn{background:#f97316;color:#fff;border:none;border-radius:14px;
-   padding:18px 34px;font-size:18px;font-weight:bold}
+ #start h1{font-size:22px;margin:0 0 10px}#start p{font-size:14px;opacity:.85;max-width:320px;margin:0 0 26px}
+ #startBtn{background:#f97316;color:#fff;border:none;border-radius:14px;padding:18px 34px;font-size:18px;font-weight:bold}
  #log{position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:rgba(0,0,0,.8);
-   color:#0f0;font-size:11px;line-height:1.4;padding:8px;border-radius:8px;
-   max-height:30%;overflow:auto;white-space:pre-wrap;display:none}
+   color:#0f0;font-size:11px;line-height:1.4;padding:8px;border-radius:8px;max-height:32%;overflow:auto;white-space:pre-wrap;display:none}
  .overlay{position:fixed;top:8px;left:8px;right:8px;z-index:9999;color:#fff;
    background:rgba(0,0,0,.55);border-radius:10px;padding:8px;font-size:13px;display:none}
  .badge{background:#2563eb;color:#fff;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:bold}
 </style>
 </head>
 <body>
-
 <div id="start">
   <h1>Démo AR — Nendaz</h1>
   <p>Appuie sur Démarrer, autorise la caméra, puis vise le marqueur HIRO.</p>
   <button id="startBtn">▶ Démarrer la caméra</button>
 </div>
-
-<div class="overlay" id="ov"><span class="badge">VERSION v100</span><br>Vise le marqueur HIRO.</div>
+<div class="overlay" id="ov"><span class="badge">VERSION v110</span><br>Vise le marqueur HIRO.</div>
 <div id="log">Démarrage…</div>
 <div id="sceneHost"></div>
 
 <script>
   var L=document.getElementById('log');
   function log(m){ L.textContent += "\n" + m; }
-  window.addEventListener('error', function(e){ log("ERR: " + (e.message||"(externe)")); });
-  window.addEventListener('arjs-video-loaded', function(){ log("Camera OK"); fixVideo(); });
-
-  function fixVideo(){
-    var tries=0;
-    var iv=setInterval(function(){
-      var v=document.querySelector('video');
-      if(v){
-        v.setAttribute('playsinline','');
-        v.style.cssText="position:fixed;top:0;left:0;width:100vw;height:100vh;object-fit:cover;z-index:1;";
-        log("Video OK "+v.videoWidth+"x"+v.videoHeight);
-        clearInterval(iv);
-      }
-      if(++tries>40) clearInterval(iv);
-    },150);
-  }
+  window.addEventListener('error', function(e){ log("ERR: " + (e.message||"(sans message)")); });
+  window.addEventListener('arjs-video-loaded', function(){ log("Camera OK"); });
 
   document.getElementById('startBtn').addEventListener('click', function(){
     document.getElementById('start').style.display='none';
@@ -88,22 +57,29 @@
       '  <a-assets timeout="20000">' +
       '    <a-asset-item id="buildingModel" src="model.glb"></a-asset-item>' +
       '  </a-assets>' +
-      '  <a-marker preset="hiro" smooth="true" smoothCount="10">' +
-      '    <a-box position="0 0.5 0" material="color: red;"></a-box>' +
+      '  <a-marker id="mk" preset="hiro" smooth="true" smoothCount="10">' +
+      '    <a-box position="0 0.5 0" scale="1 1 1" material="color: #ff2d2d;"></a-box>' +
+      '    <a-box position="0 1.6 0" scale="0.6 0.6 0.6" material="color: #2dff5a; wireframe: true;"></a-box>' +
       '    <a-entity gltf-model="#buildingModel" position="0 0 0" rotation="-90 0 0" scale="0.02 0.02 0.02"></a-entity>' +
       '  </a-marker>' +
       '  <a-entity camera></a-entity>' +
       '</a-scene>';
 
     var s=document.querySelector('a-scene');
-    s.addEventListener('loaded',function(){ log("Scene prete"); fixVideo(); });
+    s.addEventListener('loaded',function(){ log("Scene prete"); });
+
     setTimeout(function(){
+      var mk=document.getElementById('mk');
+      if(mk){
+        mk.addEventListener('markerFound',function(){ log(">>> MARQUEUR DETECTE <<<"); });
+        mk.addEventListener('markerLost',function(){ log("(marqueur perdu)"); });
+      }
       var m=document.querySelector('[gltf-model]');
       if(m){
         m.addEventListener('model-loaded',function(){ log("Modele 3D charge OK"); });
         m.addEventListener('model-error',function(){ log("Modele .glb ERREUR"); });
       }
-    },500);
+    },400);
   });
 </script>
 </body>
