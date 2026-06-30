@@ -3,10 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Démo AR - Nendaz</title>
-<!-- COUPLE STABLE pour marqueurs : A-Frame 1.3.0 + AR.js 3.4.5 (THREE r150) -->
-<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/aframe@1.3.0/dist/aframe-master.min.js"></script>
-<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.5/aframe/build/aframe-ar.js"></script>
+<title>Test marqueur</title>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/aframe@1.6.0/dist/aframe-master.min.js"></script>
+<script crossorigin="anonymous" src="https://cdn.jsdelivr.net/npm/@ar-js-org/ar.js@3.4.8/aframe/build/aframe-ar.js"></script>
 <style>
  html{background:#000}
  body{margin:0;padding:0;overflow:hidden;width:100%;height:100%;background:transparent;font-family:Arial}
@@ -16,22 +15,17 @@
    width:100vw!important;height:100vh!important;z-index:2!important;background:transparent!important}
  #start{position:fixed;inset:0;z-index:100000;display:flex;flex-direction:column;
    align-items:center;justify-content:center;background:#0b1220;color:#fff;text-align:center;padding:24px}
- #start h1{font-size:22px;margin:0 0 10px}#start p{font-size:14px;opacity:.85;max-width:320px;margin:0 0 26px}
  #startBtn{background:#f97316;color:#fff;border:none;border-radius:14px;padding:18px 34px;font-size:18px;font-weight:bold}
  #log{position:fixed;left:6px;right:6px;bottom:6px;z-index:99999;background:rgba(0,0,0,.8);
    color:#0f0;font-size:11px;line-height:1.4;padding:8px;border-radius:8px;max-height:30%;overflow:auto;white-space:pre-wrap;display:none}
  .overlay{position:fixed;top:8px;left:8px;right:8px;z-index:9999;color:#fff;
    background:rgba(0,0,0,.55);border-radius:10px;padding:8px;font-size:13px;display:none}
- .badge{background:#16a34a;color:#fff;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:bold}
+ .badge{background:#dc2626;color:#fff;padding:2px 7px;border-radius:999px;font-size:11px;font-weight:bold}
 </style>
 </head>
 <body>
-<div id="start">
-  <h1>Démo AR — Nendaz</h1>
-  <p>Appuie sur Démarrer, autorise la caméra, puis vise le marqueur HIRO.</p>
-  <button id="startBtn">▶ Démarrer la caméra</button>
-</div>
-<div class="overlay" id="ov"><span class="badge">VERSION v120 (combo stable)</span><br>Vise le marqueur HIRO.</div>
+<div id="start"><button id="startBtn">▶ Démarrer la caméra</button></div>
+<div class="overlay" id="ov"><span class="badge">v130 TEST CUBE SEUL</span><br>Vise le Hiro. Un cube doit apparaître dessus.</div>
 <div id="log">Démarrage…</div>
 <div id="sceneHost"></div>
 
@@ -50,16 +44,14 @@
     var ok=!!(AFRAME.systems&&AFRAME.systems.arjs)||!!(AFRAME.components&&AFRAME.components.arjs)||!!(window.THREEx&&window.THREEx.ArToolkitContext);
     log("AR.js="+(ok?"OK":"ABSENT"));
 
+    // SCÈNE MINIMALE : aucun modèle, aucun a-assets. Juste 2 cubes.
     document.getElementById('sceneHost').innerHTML =
       '<a-scene embedded vr-mode-ui="enabled: false"' +
-      ' renderer="precision: medium; antialias: true; alpha: true"' +
+      ' renderer="alpha: true; antialias: true"' +
       ' arjs="sourceType: webcam; debugUIEnabled: false;">' +
-      '  <a-assets timeout="20000">' +
-      '    <a-asset-item id="buildingModel" src="model.glb"></a-asset-item>' +
-      '  </a-assets>' +
-      '  <a-marker id="mk" preset="hiro" smooth="true" smoothCount="10">' +
-      '    <a-box position="0 0.5 0" scale="1 1 1" material="color: #ff2d2d;"></a-box>' +
-      '    <a-entity gltf-model="#buildingModel" position="0 0 0" rotation="-90 0 0" scale="0.02 0.02 0.02"></a-entity>' +
+      '  <a-marker id="mk" preset="hiro">' +
+      '    <a-box position="0 0.5 0" material="color: red;"></a-box>' +
+      '    <a-box position="0 1.5 0" scale="0.5 0.5 0.5" material="color: #00ff66; wireframe: true;"></a-box>' +
       '  </a-marker>' +
       '  <a-entity camera></a-entity>' +
       '</a-scene>';
@@ -69,13 +61,8 @@
     setTimeout(function(){
       var mk=document.getElementById('mk');
       if(mk){
-        mk.addEventListener('markerFound',function(){ log(">>> MARQUEUR DETECTE <<<"); });
+        mk.addEventListener('markerFound',function(){ log(">>> MARQUEUR DETECTE — cube visible ?"); });
         mk.addEventListener('markerLost',function(){ log("(marqueur perdu)"); });
-      }
-      var m=document.querySelector('[gltf-model]');
-      if(m){
-        m.addEventListener('model-loaded',function(){ log("Modele 3D charge OK"); });
-        m.addEventListener('model-error',function(){ log("Modele .glb ERREUR"); });
       }
     },400);
   });
