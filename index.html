@@ -7,7 +7,11 @@
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
   <style>
-    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:Arial,Helvetica,sans-serif;color:white;}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Arial,Helvetica,sans-serif;color:white;}
+    video,#arjs-video,#arjsVideo{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:0!important;background:transparent!important;}
+    a-scene,.a-canvas,canvas{background:transparent!important;}
+    .a-canvas{position:fixed!important;inset:0!important;z-index:2!important;}
+    .top,#gear,#panel,.hint{transform:translateZ(0);}
     .top{position:fixed;left:12px;right:72px;top:12px;z-index:50;background:rgba(10,16,28,.82);border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:12px 14px;backdrop-filter:blur(8px);box-shadow:0 8px 26px rgba(0,0,0,.35)}
     .badge{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:5px 10px;background:#16a34a;font-weight:800;margin-bottom:8px}
     .dot{width:10px;height:10px;border-radius:50%;background:#86efac}
@@ -54,15 +58,19 @@
       <button class="btn orange" id="presetReal">Réel 1:1</button>
     </div>
     <div class="row2">
+      <button class="btn blue" id="presetGrand">Grand lisible</button>
+      <button class="btn orange" id="presetA4Fill">Remplir A4</button>
+    </div>
+    <div class="row2">
       <button class="btn green" id="lockBtn">Verrouiller</button>
       <button class="btn gray" id="resetBtn">Reset</button>
     </div>
     <label>Échelle maquette <span class="val" id="scaleVal"></span></label>
-    <input id="scaleRange" type="range" min="0.005" max="0.08" step="0.001" />
+    <input id="scaleRange" type="range" min="0.010" max="0.160" step="0.001" />
     <label>Hauteur des voiles <span class="val" id="heightVal"></span></label>
-    <input id="heightRange" type="range" min="0.02" max="0.35" step="0.005" />
+    <input id="heightRange" type="range" min="0.02" max="0.60" step="0.005" />
     <label>Épaisseur visuelle <span class="val" id="thickVal"></span></label>
-    <input id="thickRange" type="range" min="0.008" max="0.08" step="0.002" />
+    <input id="thickRange" type="range" min="0.010" max="0.140" step="0.002" />
     <label>Rotation plan <span class="val" id="rotVal"></span></label>
     <input id="rotRange" type="range" min="-180" max="180" step="1" />
     <label>Taille marqueur HIRO imprimé <span class="val" id="markerVal"></span></label>
@@ -83,11 +91,11 @@
 
 <script>
 const RAW_DATA = {"scale":0.01765480770527236,"items":[{"id":"dadfcd8f","name":"Voile #001","mtype":"VOILE","kind":"wall","pts_pdf":[[472.75,666.75],[473.0,614.5]],"value":0.922474261635566,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":1,"deduction":false,"deduct_desc":"","formula_text":"0,922"},{"id":"ba32b817","name":"Voile #002","mtype":"VOILE","kind":"wall","pts_pdf":[[472.75,514.25],[472.75,374.0]],"value":2.476086780664448,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":2,"deduction":false,"deduct_desc":"","formula_text":"2,476"},{"id":"5aa17941","name":"Voile #003","mtype":"VOILE","kind":"wall","pts_pdf":[[472.75,273.0],[472.75,206.5]],"value":1.174044712400612,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":3,"deduction":false,"deduct_desc":"","formula_text":"1,174"},{"id":"7e2f6a3c","name":"Voile #004","mtype":"VOILE","kind":"wall","pts_pdf":[[483.0,216.75],[990.0,216.75]],"value":8.950987506573087,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":4,"deduction":false,"deduct_desc":"","formula_text":"8,951"},{"id":"f1d56590","name":"Voile #005","mtype":"VOILE","kind":"wall","pts_pdf":[[979.25,328.25],[979.5,216.75]],"value":1.9685160072279793,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":5,"deduction":false,"deduct_desc":"","formula_text":"1,969"},{"id":"1033ac26","name":"Voile #006","mtype":"VOILE","kind":"wall","pts_pdf":[[989.75,328.25],[1352.75,328.5]],"value":6.408696716883496,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":6,"deduction":false,"deduct_desc":"","formula_text":"6,409"},{"id":"6ecf2b33","name":"Voile #007","mtype":"VOILE","kind":"wall","pts_pdf":[[1342.250177156531,328.49276871704996],[1342.25,886.25]],"value":9.847096664526099,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":7,"deduction":false,"deduct_desc":"","formula_text":"9,847"},{"id":"567ea88b","name":"Voile #008","mtype":"VOILE","kind":"wall","pts_pdf":[[1367.25,876.25],[1352.25,876.25]],"value":0.2648221155790854,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":8,"deduction":false,"deduct_desc":"","formula_text":"0,265"},{"id":"f599fb17","name":"Voile #009","mtype":"VOILE","kind":"wall","pts_pdf":[[1342.2500032556359,876.0000001588126],[1292.5,876.0]],"value":0.8783267408149252,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":9,"deduction":false,"deduct_desc":"","formula_text":"0,878"},{"id":"eb838f83","name":"Voile #010","mtype":"VOILE","kind":"wall","pts_pdf":[[1209.0,886.25],[1137.75,886.0]],"value":1.2579127923135356,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":10,"deduction":false,"deduct_desc":"","formula_text":"1,258"},{"id":"542ac391","name":"Voile #011","mtype":"VOILE","kind":"wall","pts_pdf":[[1053.75,886.25],[994.25,886.0]],"value":1.0504703309058199,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":11,"deduction":false,"deduct_desc":"","formula_text":"1,050"},{"id":"e38e9635","name":"Voile #012","mtype":"VOILE","kind":"wall","pts_pdf":[[994.5,875.5],[994.25,666.5]],"value":3.6898574501748582,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":12,"deduction":false,"deduct_desc":"","formula_text":"3,690"},{"id":"e3caee91","name":"Voile #013","mtype":"VOILE","kind":"wall","pts_pdf":[[930.25,656.75],[1004.75,656.75]],"value":1.3152831740427908,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":13,"deduction":false,"deduct_desc":"","formula_text":"1,315"},{"id":"1b5c9921","name":"Voile #014","mtype":"VOILE","kind":"wall","pts_pdf":[[989.75,328.25],[989.75,656.75]],"value":5.79960433118197,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":14,"deduction":false,"deduct_desc":"","formula_text":"5,800"},{"id":"c1cda8ec","name":"Voile #015","mtype":"VOILE","kind":"wall","pts_pdf":[[1357.25,886.25],[1356.75,931.75]],"value":0.8033422513446892,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":15,"deduction":false,"deduct_desc":"","formula_text":"0,803"},{"id":"2c73adf1","name":"Voile #016","mtype":"VOILE","kind":"wall","pts_pdf":[[1367.0,921.25],[1416.5,921.25]],"value":0.8739129814109818,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":16,"deduction":false,"deduct_desc":"","formula_text":"0,874"},{"id":"0cb14bbb","name":"Voile #017","mtype":"VOILE","kind":"wall","pts_pdf":[[1540.5,921.25],[1691.0,921.25]],"value":2.6570485596434903,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":17,"deduction":false,"deduct_desc":"","formula_text":"2,657"},{"id":"4d97e270","name":"Voile #018","mtype":"VOILE","kind":"wall","pts_pdf":[[1610.5,921.25],[1610.5,703.25]],"value":3.8487480797493743,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":18,"deduction":false,"deduct_desc":"","formula_text":"3,849"},{"id":"74481fae","name":"Voile #019","mtype":"VOILE","kind":"wall","pts_pdf":[[1814.5,931.5],[1874.25,931.75]],"value":1.0548839940356494,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":19,"deduction":false,"deduct_desc":"","formula_text":"1,055"},{"id":"21579394","name":"Voile #020","mtype":"VOILE","kind":"wall","pts_pdf":[[1864.0,921.25],[1864.0,879.5]],"value":0.737088221695121,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":20,"deduction":false,"deduct_desc":"","formula_text":"0,737"},{"id":"7a3f5c59","name":"Voile #021","mtype":"VOILE","kind":"wall","pts_pdf":[[1864.0,778.5],[1863.5,638.5]],"value":2.471688841909031,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":21,"deduction":false,"deduct_desc":"","formula_text":"2,472"},{"id":"b40f44d1","name":"Voile #022","mtype":"VOILE","kind":"wall","pts_pdf":[[1874.0,537.75],[1874.25,471.25]],"value":1.1740530088034908,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":22,"deduction":false,"deduct_desc":"","formula_text":"1,174"},{"id":"16dabbfc","name":"Voile #023","mtype":"VOILE","kind":"wall","pts_pdf":[[1863.75,471.5],[1352.75,471.5]],"value":9.021606737394176,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":23,"deduction":false,"deduct_desc":"","formula_text":"9,022"},{"id":"bbac0511","name":"Voile #024","mtype":"VOILE","kind":"wall","pts_pdf":[[1655.25,635.0],[1655.5,481.5]],"value":2.710016576976733,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":24,"deduction":false,"deduct_desc":"","formula_text":"2,710"},{"id":"30599cde","name":"Voile #025","mtype":"VOILE","kind":"wall","pts_pdf":[[483.25,656.75],[532.75,656.75]],"value":0.8739129814109818,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":25,"deduction":false,"deduct_desc":"","formula_text":"0,874"},{"id":"b6bb69ef","name":"Voile #026","mtype":"VOILE","kind":"wall","pts_pdf":[[656.0,656.5],[807.25,656.5]],"value":2.670289665422444,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":26,"deduction":false,"deduct_desc":"","formula_text":"2,670"},{"id":"02a2d05f","name":"Voile #027","mtype":"VOILE","kind":"wall","pts_pdf":[[726.0,656.5],[726.25,438.5]],"value":3.8487506105409315,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":27,"deduction":false,"deduct_desc":"","formula_text":"3,849"},{"id":"0f3b213a","name":"Voile #028","mtype":"VOILE","kind":"wall","pts_pdf":[[681.25,369.75],[681.5,216.75]],"value":2.7011891848698903,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":28,"deduction":false,"deduct_desc":"","formula_text":"2,701"},{"id":"44e9ca45","name":"Voile #029","mtype":"VOILE","kind":"wall","pts_pdf":[[1864.0,457.5],[1863.75,471.5]],"value":0.24720671278564152,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":29,"deduction":false,"deduct_desc":"","formula_text":"0,247"},{"id":"9dbe002d","name":"Radier #001","mtype":"RADIER","kind":"poly","pts_pdf":[[472.75,666.75],[472.75,206.5],[989.8333740234375,206.5],[989.8333740234375,318.0],[1352.5,318.3333435058594],[1352.75,471.5],[1874.2496831497583,471.33428216431713],[1874.1657034975237,931.7496472949687],[1356.7527972407688,931.4954510900428],[1357.25,886.25],[994.3347732580311,886.0003561901598],[994.2503986529783,666.8332738898953],[472.75,666.75]],"value":212.86014968925244,"unit":"m²","thickness_cm":24.0,"height_m":null,"m_number":30,"deduction":false,"deduct_desc":"","formula_text":"Poly 13 pts = 212,860 m²"},{"id":"db3e7c7c","name":"Trémie escalier 2.53×2.36m","mtype":"DEDUCT_DALLE","kind":"poly","pts_pdf":[[836.0,216.75],[979.1111450195312,216.75],[979.1111450195312,350.22222900390625],[836.0,350.22222900390625]],"value":-5.953746689529979,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduction":true,"deduct_desc":"Trémie escalier 2.53×2.36m","formula_text":"-2,527 × 2,356"},{"id":"449bcbee","name":"Trémie escalier 2 1.79×2.79m","mtype":"DEDUCT_DALLE","kind":"poly","pts_pdf":[[1155.112057734569,328.36388571469325],[1256.4444580078125,328.36388571469325],[1256.4444580078125,486.6666564941406],[1155.112057734569,486.6666564941406]],"value":-4.9999173986228085,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduction":true,"deduct_desc":"Trémie escalier 2 1.79×2.79m","formula_text":"-1,789 × 2,795"},{"id":"7e273357","name":"Trémie  escalier 3 2.77×2.33m","mtype":"DEDUCT_DALLE","kind":"poly","pts_pdf":[[1362.6666259765625,482.22222900390625],[1519.5555419921875,482.22222900390625],[1519.5555419921875,614.2222290039062],[1362.6666259765625,614.2222290039062]],"value":-6.454939510393158,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduction":true,"deduct_desc":"Trémie  escalier 3 2.77×2.33m","formula_text":"-2,770 × 2,330"}]};
-const SETTINGS_KEY = 'nendaz_ar_plan2d_hiro_a4_v1';
+const SETTINGS_KEY = 'nendaz_ar_plan2d_hiro_a4_v2_grand_camera';
 let state = {
-  modelScale: 0.025,
-  wallHeight: 0.075,
-  minThickness: 0.020,
+  modelScale: 0.055,
+  wallHeight: 0.120,
+  minThickness: 0.035,
   rotationY: 0,
   markerSize: 0.16,
   showRadier: true,
@@ -217,7 +225,9 @@ function loadSettings(){ try{ Object.assign(state, JSON.parse(localStorage.getIt
 function rebuild(){ refreshUI(); if(window.rebuildPlan) window.rebuildPlan(); }
 
 document.getElementById('gear').onclick=()=>document.getElementById('panel').classList.toggle('open');
-document.getElementById('presetPlan').onclick=()=>{ Object.assign(state,{modelScale:0.025,wallHeight:0.075,minThickness:0.020,rotationY:0,userScale:1,userRotY:0}); rebuild(); };
+document.getElementById('presetPlan').onclick=()=>{ Object.assign(state,{modelScale:0.040,wallHeight:0.090,minThickness:0.030,rotationY:0,userScale:1,userRotY:0}); rebuild(); };
+document.getElementById('presetGrand').onclick=()=>{ Object.assign(state,{modelScale:0.070,wallHeight:0.140,minThickness:0.045,rotationY:0,userScale:1,userRotY:0}); rebuild(); };
+document.getElementById('presetA4Fill').onclick=()=>{ Object.assign(state,{modelScale:0.095,wallHeight:0.160,minThickness:0.055,rotationY:0,userScale:1,userRotY:0}); rebuild(); };
 document.getElementById('presetRelief').onclick=()=>{ Object.assign(state,{modelScale:0.025,wallHeight:0.18,minThickness:0.022}); rebuild(); };
 document.getElementById('presetReal').onclick=()=>{ Object.assign(state,{modelScale:1.0,wallHeight:2.80,minThickness:0.18}); alert('Mode réel : le bâtiment fait sa vraie taille. Pose le HIRO au sol et recule-toi.'); rebuild(); };
 document.getElementById('resetBtn').onclick=()=>{ localStorage.removeItem(SETTINGS_KEY); location.reload(); };
@@ -261,6 +271,31 @@ document.getElementById('statVoiles').textContent=walls.length;
 document.getElementById('statMl').textContent=fmt(ml,1)+' ml';
 document.getElementById('statTr').textContent=tremies().length;
 refreshUI();
+
+
+// Correction iPhone/Safari : force la caméra derrière et le canvas en transparence.
+(function fixCameraBackground(){
+  const scene = document.querySelector('a-scene');
+  function apply(){
+    document.body.style.background = 'transparent';
+    document.documentElement.style.background = 'transparent';
+    const videos = document.querySelectorAll('video,#arjs-video,#arjsVideo');
+    videos.forEach(v => {
+      v.style.position='fixed'; v.style.inset='0';
+      v.style.width='100vw'; v.style.height='100vh'; v.style.objectFit='cover';
+      v.style.zIndex='0'; v.style.background='transparent';
+    });
+    const canvas = document.querySelector('canvas.a-canvas, .a-canvas, canvas');
+    if(canvas){ canvas.style.background='transparent'; canvas.style.position='fixed'; canvas.style.inset='0'; canvas.style.zIndex='2'; }
+    if(scene && scene.renderer){
+      scene.renderer.setClearColor(new THREE.Color(0x000000), 0);
+      scene.renderer.autoClear = true;
+      if(scene.renderer.domElement) scene.renderer.domElement.style.background='transparent';
+    }
+  }
+  if(scene) scene.addEventListener('loaded', apply);
+  setInterval(apply, 700);
+})();
 </script>
 </body>
 </html>
