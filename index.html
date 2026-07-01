@@ -1,301 +1,41 @@
 <!doctype html>
 <html lang="fr">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
-  <title>Haute Nendaz AR - Plan 2D ancré HIRO A4</title>
-  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-  <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-  <style>
-    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:Arial,Helvetica,sans-serif;color:white;}
-    video,#arjs-video,#arjsVideo{position:fixed!important;inset:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:0!important;background:transparent!important;}
-    a-scene,.a-canvas,canvas{background:transparent!important;}
-    .a-canvas{position:fixed!important;inset:0!important;z-index:2!important;}
-    .top,#gear,#panel,.hint{transform:translateZ(0);}
-    .top{position:fixed;left:12px;right:72px;top:12px;z-index:50;background:rgba(10,16,28,.82);border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:12px 14px;backdrop-filter:blur(8px);box-shadow:0 8px 26px rgba(0,0,0,.35)}
-    .badge{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:5px 10px;background:#16a34a;font-weight:800;margin-bottom:8px}
-    .dot{width:10px;height:10px;border-radius:50%;background:#86efac}
-    .title{font-size:20px;font-weight:900;line-height:1.1}
-    .sub{font-size:13px;color:#d7dee9;margin-top:4px;line-height:1.25}
-    #gear{position:fixed;right:18px;top:24px;z-index:60;width:62px;height:62px;border-radius:50%;border:none;background:#2563eb;color:white;font-size:30px;box-shadow:0 10px 25px rgba(0,0,0,.35)}
-    #panel{position:fixed;left:0;right:0;bottom:0;z-index:70;background:rgba(9,17,32,.94);border-radius:22px 22px 0 0;padding:16px 16px max(16px,env(safe-area-inset-bottom));display:none;max-height:68vh;overflow:auto;box-shadow:0 -8px 30px rgba(0,0,0,.4)}
-    #panel.open{display:block}
-    .row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin:10px 0}
-    .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin:10px 0}
-    button{font:inherit}
-    .btn{border:none;border-radius:14px;padding:12px 10px;background:#7c3aed;color:white;font-weight:800;font-size:16px}
-    .btn.orange{background:#f97316} .btn.green{background:#16a34a} .btn.blue{background:#0ea5e9} .btn.gray{background:#64748b}
-    label{display:block;margin:12px 0 4px;font-weight:700;color:#e5e7eb}
-    input[type=range]{width:100%}
-    .val{color:#7dd3fc;font-weight:900;float:right}
-    .hint{position:fixed;left:12px;right:12px;bottom:16px;z-index:45;text-align:center;background:rgba(0,0,0,.58);border-radius:14px;padding:10px 12px;font-size:14px;line-height:1.25;pointer-events:none}
-    .legend{display:flex;gap:14px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:8px;color:#cbd5e1}
-    .sw{display:inline-block;width:28px;height:6px;border-radius:99px;margin-right:5px;vertical-align:middle}
-    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:8px}
-    .stat{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:7px}
-    .stat b{font-size:15px}
-    .stat span{display:block;font-size:11px;color:#cbd5e1;margin-top:2px}
-  </style>
-</head>
-<body>
-  <div class="top">
-    <div class="badge"><span class="dot" id="statusDot"></span><span id="statusText">Vise le HIRO A4</span></div>
-    <div class="title">Plan 2D coffrage AR — Haute Nendaz</div>
-    <div class="sub">Ancré sur marqueur HIRO. Un doigt = tourner. Deux doigts = zoom.</div>
-    <div class="stats">
-      <div class="stat"><b id="statVoiles">—</b><span>voiles</span></div>
-      <div class="stat"><b id="statMl">—</b><span>ml voiles</span></div>
-      <div class="stat"><b id="statTr">—</b><span>trémies</span></div>
-    </div>
-    <div class="legend"><span><i class="sw" style="background:#111827"></i>voiles</span><span><i class="sw" style="background:#7dd3fc"></i>radier</span><span><i class="sw" style="background:#ef4444"></i>trémies</span></div>
-  </div>
-  <button id="gear">⚙️</button>
-  <div id="panel">
-    <h2 style="margin:2px 0 10px">Réglages AR</h2>
-    <div class="row">
-      <button class="btn" id="presetPlan">Plan A4</button>
-      <button class="btn blue" id="presetRelief">Relief</button>
-      <button class="btn orange" id="presetReal">Réel 1:1</button>
-    </div>
-    <div class="row2">
-      <button class="btn blue" id="presetGrand">Grand lisible</button>
-      <button class="btn orange" id="presetA4Fill">Remplir A4</button>
-    </div>
-    <div class="row2">
-      <button class="btn green" id="lockBtn">Verrouiller</button>
-      <button class="btn gray" id="resetBtn">Reset</button>
-    </div>
-    <label>Échelle maquette <span class="val" id="scaleVal"></span></label>
-    <input id="scaleRange" type="range" min="0.010" max="0.160" step="0.001" />
-    <label>Hauteur des voiles <span class="val" id="heightVal"></span></label>
-    <input id="heightRange" type="range" min="0.02" max="0.60" step="0.005" />
-    <label>Épaisseur visuelle <span class="val" id="thickVal"></span></label>
-    <input id="thickRange" type="range" min="0.010" max="0.140" step="0.002" />
-    <label>Rotation plan <span class="val" id="rotVal"></span></label>
-    <input id="rotRange" type="range" min="-180" max="180" step="1" />
-    <label>Taille marqueur HIRO imprimé <span class="val" id="markerVal"></span></label>
-    <input id="markerRange" type="range" min="0.08" max="0.30" step="0.01" />
-    <div class="row2">
-      <button class="btn green" id="saveBtn">✓ Sauvegarder</button>
-      <button class="btn orange" id="toggleRadier">Masquer radier</button>
-    </div>
-  </div>
-  <div class="hint">Pose le HIRO bien à plat. Pour une démo stable : mode Plan A4, téléphone à 40–70 cm, lumière mate.</div>
-
-  <a-scene embedded vr-mode-ui="enabled:false" renderer="antialias:true; alpha:true; precision:mediump; logarithmicDepthBuffer:true" arjs="sourceType:webcam; trackingMethod:best; debugUIEnabled:false; detectionMode:mono; maxDetectionRate:30;">
-    <a-marker id="hiro" preset="hiro" size="0.16" smooth="true" smoothCount="10" smoothTolerance="0.015" smoothThreshold="4">
-      <a-entity id="planRoot" plan-builder></a-entity>
-    </a-marker>
-    <a-entity camera></a-entity>
-  </a-scene>
-
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Plan AR HIRO — Haute Nendaz</title>
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif;color:#fff;}
+video,#arjs-video,#arjsVideo{position:fixed!important;left:0!important;top:0!important;width:100vw!important;height:100vh!important;object-fit:cover!important;z-index:0!important;background:transparent!important;}
+a-scene,canvas,.a-canvas{position:fixed!important;left:0!important;top:0!important;width:100vw!important;height:100vh!important;z-index:1!important;background:transparent!important;}
+#hud{position:fixed;left:14px;top:calc(env(safe-area-inset-top) + 18px);z-index:5;width:min(78vw,520px);background:rgba(9,14,25,.82);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,.18);border-radius:22px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.35)}
+#status{display:inline-flex;gap:8px;align-items:center;border-radius:999px;background:#16a34a;padding:8px 14px;font-weight:800;font-size:18px}
+#dot{width:12px;height:12px;border-radius:50%;background:#86efac}
+h1{font-size:25px;line-height:1.05;margin:12px 0 4px;font-weight:900}p{margin:0;color:#dbe3f0;font-size:15px;line-height:1.25}.stats{display:flex;gap:8px;margin-top:12px}.box{flex:1;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.14);border-radius:14px;padding:9px}.n{font-weight:900;font-size:20px}.l{color:#cbd5e1;font-size:13px}
+#gear{position:fixed;right:18px;top:calc(env(safe-area-inset-top) + 40px);z-index:7;width:74px;height:74px;border-radius:50%;background:#2563eb;border:0;color:#fff;font-size:35px;box-shadow:0 12px 28px rgba(0,0,0,.35)}
+#panel{display:none;position:fixed;left:0;right:0;bottom:0;z-index:9;background:rgba(10,17,32,.94);border-radius:24px 24px 0 0;padding:18px 16px calc(20px + env(safe-area-inset-bottom));box-shadow:0 -14px 36px rgba(0,0,0,.42)}#panel.open{display:block}.row{display:flex;gap:10px;align-items:center;margin:10px 0}.row label{min-width:120px;font-size:16px}.row input{flex:1}.val{width:62px;text-align:right;color:#7dd3fc;font-weight:800}.btns{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}button{font:inherit;font-weight:800;border:0;border-radius:14px;padding:14px;color:white;background:#7c3aed}button.green{background:#16a34a}button.gray{background:#64748b}
+#help{position:fixed;left:16px;right:16px;bottom:calc(20px + env(safe-area-inset-bottom));z-index:4;text-align:center;background:rgba(0,0,0,.55);border-radius:14px;padding:10px;font-size:16px}
+</style></head><body>
+<div id="hud"><div id="status"><span id="dot"></span><span id="statusText">Vise le HIRO A4</span></div><h1>Plan 2D coffrage AR — Haute Nendaz</h1><p>Version visible : cube vert + plan agrandi. Un doigt = tourner, deux doigts = zoom.</p><div class="stats"><div class="box"><div class="n">29</div><div class="l">voiles</div></div><div class="box"><div class="n">81.7 ml</div><div class="l">voiles</div></div><div class="box"><div class="n">3</div><div class="l">trémies</div></div></div></div>
+<button id="gear">⚙️</button><div id="panel"><h2>Réglages visibles</h2><div class="row"><label>Taille plan</label><input id="scale" type="range" min="0.7" max="4.0" step="0.05"><span id="scaleVal" class="val"></span></div><div class="row"><label>Hauteur murs</label><input id="height" type="range" min="0.01" max="0.22" step="0.005"><span id="heightVal" class="val"></span></div><div class="row"><label>Rotation</label><input id="rot" type="range" min="-180" max="180" step="1"><span id="rotVal" class="val"></span></div><div class="btns"><button id="big">Grand lisible</button><button id="fill">Remplir A4</button><button class="green" id="save">Sauver</button><button class="gray" id="reset">Reset</button></div></div>
+<div id="help">Si rien n’apparaît : ouvre ⚙️ puis clique “Remplir A4”. Le cube vert doit apparaître sur le marqueur.</div>
+<a-scene embedded renderer="alpha: true; antialias: true; logarithmicDepthBuffer: true" vr-mode-ui="enabled:false" arjs="sourceType: webcam; debugUIEnabled:false; detectionMode: mono; maxDetectionRate: 60;">
+<a-marker id="marker" preset="hiro" smooth="true" smoothCount="5" smoothTolerance="0.01" smoothThreshold="2"><a-entity id="root" position="0 0.015 0" rotation="0 0 0" scale="1 1 1"></a-entity><a-box position="0 .08 0" scale=".10 .10 .10" material="color:#00ff66; opacity:1"></a-box></a-marker><a-entity camera></a-entity></a-scene>
 <script>
-const RAW_DATA = {"scale":0.01765480770527236,"items":[{"id":"dadfcd8f","name":"Voile #001","mtype":"VOILE","kind":"wall","pts_pdf":[[472.75,666.75],[473.0,614.5]],"value":0.922474261635566,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":1,"deduction":false,"deduct_desc":"","formula_text":"0,922"},{"id":"ba32b817","name":"Voile #002","mtype":"VOILE","kind":"wall","pts_pdf":[[472.75,514.25],[472.75,374.0]],"value":2.476086780664448,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":2,"deduction":false,"deduct_desc":"","formula_text":"2,476"},{"id":"5aa17941","name":"Voile #003","mtype":"VOILE","kind":"wall","pts_pdf":[[472.75,273.0],[472.75,206.5]],"value":1.174044712400612,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":3,"deduction":false,"deduct_desc":"","formula_text":"1,174"},{"id":"7e2f6a3c","name":"Voile #004","mtype":"VOILE","kind":"wall","pts_pdf":[[483.0,216.75],[990.0,216.75]],"value":8.950987506573087,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":4,"deduction":false,"deduct_desc":"","formula_text":"8,951"},{"id":"f1d56590","name":"Voile #005","mtype":"VOILE","kind":"wall","pts_pdf":[[979.25,328.25],[979.5,216.75]],"value":1.9685160072279793,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":5,"deduction":false,"deduct_desc":"","formula_text":"1,969"},{"id":"1033ac26","name":"Voile #006","mtype":"VOILE","kind":"wall","pts_pdf":[[989.75,328.25],[1352.75,328.5]],"value":6.408696716883496,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":6,"deduction":false,"deduct_desc":"","formula_text":"6,409"},{"id":"6ecf2b33","name":"Voile #007","mtype":"VOILE","kind":"wall","pts_pdf":[[1342.250177156531,328.49276871704996],[1342.25,886.25]],"value":9.847096664526099,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":7,"deduction":false,"deduct_desc":"","formula_text":"9,847"},{"id":"567ea88b","name":"Voile #008","mtype":"VOILE","kind":"wall","pts_pdf":[[1367.25,876.25],[1352.25,876.25]],"value":0.2648221155790854,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":8,"deduction":false,"deduct_desc":"","formula_text":"0,265"},{"id":"f599fb17","name":"Voile #009","mtype":"VOILE","kind":"wall","pts_pdf":[[1342.2500032556359,876.0000001588126],[1292.5,876.0]],"value":0.8783267408149252,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":9,"deduction":false,"deduct_desc":"","formula_text":"0,878"},{"id":"eb838f83","name":"Voile #010","mtype":"VOILE","kind":"wall","pts_pdf":[[1209.0,886.25],[1137.75,886.0]],"value":1.2579127923135356,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":10,"deduction":false,"deduct_desc":"","formula_text":"1,258"},{"id":"542ac391","name":"Voile #011","mtype":"VOILE","kind":"wall","pts_pdf":[[1053.75,886.25],[994.25,886.0]],"value":1.0504703309058199,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":11,"deduction":false,"deduct_desc":"","formula_text":"1,050"},{"id":"e38e9635","name":"Voile #012","mtype":"VOILE","kind":"wall","pts_pdf":[[994.5,875.5],[994.25,666.5]],"value":3.6898574501748582,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":12,"deduction":false,"deduct_desc":"","formula_text":"3,690"},{"id":"e3caee91","name":"Voile #013","mtype":"VOILE","kind":"wall","pts_pdf":[[930.25,656.75],[1004.75,656.75]],"value":1.3152831740427908,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":13,"deduction":false,"deduct_desc":"","formula_text":"1,315"},{"id":"1b5c9921","name":"Voile #014","mtype":"VOILE","kind":"wall","pts_pdf":[[989.75,328.25],[989.75,656.75]],"value":5.79960433118197,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":14,"deduction":false,"deduct_desc":"","formula_text":"5,800"},{"id":"c1cda8ec","name":"Voile #015","mtype":"VOILE","kind":"wall","pts_pdf":[[1357.25,886.25],[1356.75,931.75]],"value":0.8033422513446892,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":15,"deduction":false,"deduct_desc":"","formula_text":"0,803"},{"id":"2c73adf1","name":"Voile #016","mtype":"VOILE","kind":"wall","pts_pdf":[[1367.0,921.25],[1416.5,921.25]],"value":0.8739129814109818,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":16,"deduction":false,"deduct_desc":"","formula_text":"0,874"},{"id":"0cb14bbb","name":"Voile #017","mtype":"VOILE","kind":"wall","pts_pdf":[[1540.5,921.25],[1691.0,921.25]],"value":2.6570485596434903,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":17,"deduction":false,"deduct_desc":"","formula_text":"2,657"},{"id":"4d97e270","name":"Voile #018","mtype":"VOILE","kind":"wall","pts_pdf":[[1610.5,921.25],[1610.5,703.25]],"value":3.8487480797493743,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":18,"deduction":false,"deduct_desc":"","formula_text":"3,849"},{"id":"74481fae","name":"Voile #019","mtype":"VOILE","kind":"wall","pts_pdf":[[1814.5,931.5],[1874.25,931.75]],"value":1.0548839940356494,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":19,"deduction":false,"deduct_desc":"","formula_text":"1,055"},{"id":"21579394","name":"Voile #020","mtype":"VOILE","kind":"wall","pts_pdf":[[1864.0,921.25],[1864.0,879.5]],"value":0.737088221695121,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":20,"deduction":false,"deduct_desc":"","formula_text":"0,737"},{"id":"7a3f5c59","name":"Voile #021","mtype":"VOILE","kind":"wall","pts_pdf":[[1864.0,778.5],[1863.5,638.5]],"value":2.471688841909031,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":21,"deduction":false,"deduct_desc":"","formula_text":"2,472"},{"id":"b40f44d1","name":"Voile #022","mtype":"VOILE","kind":"wall","pts_pdf":[[1874.0,537.75],[1874.25,471.25]],"value":1.1740530088034908,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":22,"deduction":false,"deduct_desc":"","formula_text":"1,174"},{"id":"16dabbfc","name":"Voile #023","mtype":"VOILE","kind":"wall","pts_pdf":[[1863.75,471.5],[1352.75,471.5]],"value":9.021606737394176,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":23,"deduction":false,"deduct_desc":"","formula_text":"9,022"},{"id":"bbac0511","name":"Voile #024","mtype":"VOILE","kind":"wall","pts_pdf":[[1655.25,635.0],[1655.5,481.5]],"value":2.710016576976733,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":24,"deduction":false,"deduct_desc":"","formula_text":"2,710"},{"id":"30599cde","name":"Voile #025","mtype":"VOILE","kind":"wall","pts_pdf":[[483.25,656.75],[532.75,656.75]],"value":0.8739129814109818,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":25,"deduction":false,"deduct_desc":"","formula_text":"0,874"},{"id":"b6bb69ef","name":"Voile #026","mtype":"VOILE","kind":"wall","pts_pdf":[[656.0,656.5],[807.25,656.5]],"value":2.670289665422444,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":26,"deduction":false,"deduct_desc":"","formula_text":"2,670"},{"id":"02a2d05f","name":"Voile #027","mtype":"VOILE","kind":"wall","pts_pdf":[[726.0,656.5],[726.25,438.5]],"value":3.8487506105409315,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":27,"deduction":false,"deduct_desc":"","formula_text":"3,849"},{"id":"0f3b213a","name":"Voile #028","mtype":"VOILE","kind":"wall","pts_pdf":[[681.25,369.75],[681.5,216.75]],"value":2.7011891848698903,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":28,"deduction":false,"deduct_desc":"","formula_text":"2,701"},{"id":"44e9ca45","name":"Voile #029","mtype":"VOILE","kind":"wall","pts_pdf":[[1864.0,457.5],[1863.75,471.5]],"value":0.24720671278564152,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":29,"deduction":false,"deduct_desc":"","formula_text":"0,247"},{"id":"9dbe002d","name":"Radier #001","mtype":"RADIER","kind":"poly","pts_pdf":[[472.75,666.75],[472.75,206.5],[989.8333740234375,206.5],[989.8333740234375,318.0],[1352.5,318.3333435058594],[1352.75,471.5],[1874.2496831497583,471.33428216431713],[1874.1657034975237,931.7496472949687],[1356.7527972407688,931.4954510900428],[1357.25,886.25],[994.3347732580311,886.0003561901598],[994.2503986529783,666.8332738898953],[472.75,666.75]],"value":212.86014968925244,"unit":"m²","thickness_cm":24.0,"height_m":null,"m_number":30,"deduction":false,"deduct_desc":"","formula_text":"Poly 13 pts = 212,860 m²"},{"id":"db3e7c7c","name":"Trémie escalier 2.53×2.36m","mtype":"DEDUCT_DALLE","kind":"poly","pts_pdf":[[836.0,216.75],[979.1111450195312,216.75],[979.1111450195312,350.22222900390625],[836.0,350.22222900390625]],"value":-5.953746689529979,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduction":true,"deduct_desc":"Trémie escalier 2.53×2.36m","formula_text":"-2,527 × 2,356"},{"id":"449bcbee","name":"Trémie escalier 2 1.79×2.79m","mtype":"DEDUCT_DALLE","kind":"poly","pts_pdf":[[1155.112057734569,328.36388571469325],[1256.4444580078125,328.36388571469325],[1256.4444580078125,486.6666564941406],[1155.112057734569,486.6666564941406]],"value":-4.9999173986228085,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduction":true,"deduct_desc":"Trémie escalier 2 1.79×2.79m","formula_text":"-1,789 × 2,795"},{"id":"7e273357","name":"Trémie  escalier 3 2.77×2.33m","mtype":"DEDUCT_DALLE","kind":"poly","pts_pdf":[[1362.6666259765625,482.22222900390625],[1519.5555419921875,482.22222900390625],[1519.5555419921875,614.2222290039062],[1362.6666259765625,614.2222290039062]],"value":-6.454939510393158,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduction":true,"deduct_desc":"Trémie  escalier 3 2.77×2.33m","formula_text":"-2,770 × 2,330"}]};
-const SETTINGS_KEY = 'nendaz_ar_plan2d_hiro_a4_v2_grand_camera';
-let state = {
-  modelScale: 0.055,
-  wallHeight: 0.120,
-  minThickness: 0.035,
-  rotationY: 0,
-  markerSize: 0.16,
-  showRadier: true,
-  locked: false,
-  userScale: 1,
-  userRotY: 0
-};
-
-function itemList(type){ return RAW_DATA.items.filter(i => i.mtype === type); }
-function mPoint(p){ return {x:p[0]*RAW_DATA.scale, z:-p[1]*RAW_DATA.scale}; }
-function wallItems(){ return itemList('VOILE'); }
-function radierItem(){ return itemList('RADIER')[0]; }
-function tremies(){ return itemList('DEDUCT_DALLE'); }
-function fmt(n,d=2){ return Number(n||0).toFixed(d); }
-function centerFromRadier(){
-  const r = radierItem();
-  const pts = r ? r.pts_pdf.map(mPoint) : wallItems().flatMap(w => w.pts_pdf.map(mPoint));
-  let minX=Infinity,maxX=-Infinity,minZ=Infinity,maxZ=-Infinity;
-  pts.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minZ=Math.min(minZ,p.z); maxZ=Math.max(maxZ,p.z); });
-  return {cx:(minX+maxX)/2, cz:(minZ+maxZ)/2, minX,maxX,minZ,maxZ, width:maxX-minX, depth:maxZ-minZ};
-}
-const geomInfo = centerFromRadier();
-
-function makeMat(color, opacity=1){
-  const mat = new THREE.MeshStandardMaterial({color, transparent: opacity < 1, opacity, roughness:.72, metalness:0});
-  mat.side = THREE.DoubleSide;
-  return mat;
-}
-const mats = {
-  radier: makeMat(0x7dd3fc, .38),
-  radierEdge: makeMat(0x0f172a, 1),
-  wall: makeMat(0x1f2937, 1),
-  wallTop: makeMat(0x6b7280, 1),
-  tremie: makeMat(0xef4444, .9),
-  marker: makeMat(0x22c55e, 1)
-};
-
-AFRAME.registerComponent('plan-builder', {
-  init() {
-    this.root = this.el.object3D;
-    this.group = new THREE.Group();
-    this.root.add(this.group);
-    loadSettings();
-    this.build();
-    window.rebuildPlan = () => this.build();
-  },
-  build() {
-    while(this.group.children.length) this.group.remove(this.group.children[0]);
-    this.group.rotation.y = THREE.MathUtils.degToRad(state.rotationY + state.userRotY);
-    this.group.scale.setScalar(state.userScale);
-    if(state.showRadier) this.addRadier();
-    this.addTremies();
-    this.addWalls();
-    this.addNorthMarker();
-  },
-  conv(p){
-    const mp = mPoint(p);
-    return new THREE.Vector2((mp.x - geomInfo.cx) * state.modelScale, (mp.z - geomInfo.cz) * state.modelScale);
-  },
-  addRadier(){
-    const r = radierItem(); if(!r) return;
-    const pts = r.pts_pdf.map(p => this.conv(p));
-    const shape = new THREE.Shape(pts);
-    const geom = new THREE.ShapeGeometry(shape);
-    geom.rotateX(-Math.PI/2);
-    const mesh = new THREE.Mesh(geom, mats.radier);
-    mesh.position.y = 0.002;
-    this.group.add(mesh);
-    // outline as dark low walls around polygon
-    for(let i=0;i<pts.length-1;i++) this.addSegmentBox(pts[i], pts[i+1], 0.018, 0.012, mats.radierEdge, 0.014);
-  },
-  addTremies(){
-    tremies().forEach(t => {
-      const pts = t.pts_pdf.map(p => this.conv(p));
-      const shape = new THREE.Shape(pts);
-      const geom = new THREE.ShapeGeometry(shape);
-      geom.rotateX(-Math.PI/2);
-      const mesh = new THREE.Mesh(geom, mats.tremie);
-      mesh.position.y = 0.018;
-      this.group.add(mesh);
-      for(let i=0;i<pts.length;i++) this.addSegmentBox(pts[i], pts[(i+1)%pts.length], 0.014, 0.018, mats.tremie, 0.030);
-    });
-  },
-  addWalls(){
-    wallItems().forEach(w => {
-      const a = this.conv(w.pts_pdf[0]), b = this.conv(w.pts_pdf[1]);
-      const realThick = ((w.thickness_cm||18)/100) * state.modelScale;
-      const visualThick = Math.max(realThick, state.minThickness);
-      this.addSegmentBox(a,b,visualThick,state.wallHeight,mats.wall,state.wallHeight/2+0.018);
-      this.addSegmentBox(a,b,visualThick*0.92,0.006,mats.wallTop,state.wallHeight+0.024);
-    });
-  },
-  addSegmentBox(a,b,thick,height,mat,ypos){
-    const dx=b.x-a.x, dz=b.y-a.y;
-    const len=Math.sqrt(dx*dx+dz*dz); if(len<=0.0001) return;
-    const geom = new THREE.BoxGeometry(len, height, thick);
-    const mesh = new THREE.Mesh(geom, mat);
-    mesh.position.set((a.x+b.x)/2, ypos, (a.y+b.y)/2);
-    mesh.rotation.y = -Math.atan2(dz, dx);
-    this.group.add(mesh);
-  },
-  addNorthMarker(){
-    const g = new THREE.BoxGeometry(0.12,0.05,0.05);
-    const m = new THREE.Mesh(g,mats.marker);
-    m.position.set(0,0.055, (geomInfo.minZ-geomInfo.cz)*state.modelScale - 0.16);
-    this.group.add(m);
-  }
-});
-
-function refreshUI(){
-  document.getElementById('scaleRange').value = state.modelScale;
-  document.getElementById('heightRange').value = state.wallHeight;
-  document.getElementById('thickRange').value = state.minThickness;
-  document.getElementById('rotRange').value = state.rotationY;
-  document.getElementById('markerRange').value = state.markerSize;
-  document.getElementById('scaleVal').textContent = state.modelScale.toFixed(3);
-  document.getElementById('heightVal').textContent = state.wallHeight.toFixed(3);
-  document.getElementById('thickVal').textContent = state.minThickness.toFixed(3);
-  document.getElementById('rotVal').textContent = state.rotationY + '°';
-  document.getElementById('markerVal').textContent = Math.round(state.markerSize*100) + ' cm';
-  document.getElementById('hiro').setAttribute('size', state.markerSize);
-  document.getElementById('lockBtn').textContent = state.locked ? 'Déverrouiller' : 'Verrouiller';
-  document.getElementById('toggleRadier').textContent = state.showRadier ? 'Masquer radier' : 'Afficher radier';
-}
-function saveSettings(){ localStorage.setItem(SETTINGS_KEY, JSON.stringify(state)); }
-function loadSettings(){ try{ Object.assign(state, JSON.parse(localStorage.getItem(SETTINGS_KEY)||'{}')); }catch(e){} refreshUI(); }
-function rebuild(){ refreshUI(); if(window.rebuildPlan) window.rebuildPlan(); }
-
-document.getElementById('gear').onclick=()=>document.getElementById('panel').classList.toggle('open');
-document.getElementById('presetPlan').onclick=()=>{ Object.assign(state,{modelScale:0.040,wallHeight:0.090,minThickness:0.030,rotationY:0,userScale:1,userRotY:0}); rebuild(); };
-document.getElementById('presetGrand').onclick=()=>{ Object.assign(state,{modelScale:0.070,wallHeight:0.140,minThickness:0.045,rotationY:0,userScale:1,userRotY:0}); rebuild(); };
-document.getElementById('presetA4Fill').onclick=()=>{ Object.assign(state,{modelScale:0.095,wallHeight:0.160,minThickness:0.055,rotationY:0,userScale:1,userRotY:0}); rebuild(); };
-document.getElementById('presetRelief').onclick=()=>{ Object.assign(state,{modelScale:0.025,wallHeight:0.18,minThickness:0.022}); rebuild(); };
-document.getElementById('presetReal').onclick=()=>{ Object.assign(state,{modelScale:1.0,wallHeight:2.80,minThickness:0.18}); alert('Mode réel : le bâtiment fait sa vraie taille. Pose le HIRO au sol et recule-toi.'); rebuild(); };
-document.getElementById('resetBtn').onclick=()=>{ localStorage.removeItem(SETTINGS_KEY); location.reload(); };
-document.getElementById('saveBtn').onclick=()=>{ saveSettings(); alert('Réglages sauvegardés sur ce téléphone.'); };
-document.getElementById('toggleRadier').onclick=()=>{ state.showRadier=!state.showRadier; rebuild(); };
-document.getElementById('lockBtn').onclick=()=>{ state.locked=!state.locked; refreshUI(); alert(state.locked ? 'Position verrouillée visuellement. Garde le HIRO dans le champ pour un tracking fiable.' : 'Déverrouillé.'); };
-['scale','height','thick','rot','marker'].forEach(name=>{
-  const el=document.getElementById(name+'Range');
-  el.addEventListener('input',()=>{
-    if(name==='scale') state.modelScale=parseFloat(el.value);
-    if(name==='height') state.wallHeight=parseFloat(el.value);
-    if(name==='thick') state.minThickness=parseFloat(el.value);
-    if(name==='rot') state.rotationY=parseInt(el.value,10);
-    if(name==='marker') state.markerSize=parseFloat(el.value);
-    rebuild();
-  });
-});
-
-const marker = document.getElementById('hiro');
-marker.addEventListener('markerFound',()=>{ document.getElementById('statusText').textContent='HIRO détecté'; document.getElementById('statusDot').style.background='#22c55e'; });
-marker.addEventListener('markerLost',()=>{ document.getElementById('statusText').textContent='Vise le HIRO A4'; document.getElementById('statusDot').style.background='#f97316'; });
-
-// Gestes : 1 doigt rotation, 2 doigts zoom
-let touchMode=null, lastX=0, lastDist=0;
-document.addEventListener('touchstart',e=>{
-  if(e.target.closest('#panel')||e.target.closest('#gear')) return;
-  if(e.touches.length===1){ touchMode='rot'; lastX=e.touches[0].clientX; }
-  if(e.touches.length===2){ touchMode='zoom'; const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; lastDist=Math.hypot(dx,dy); }
-},{passive:true});
-document.addEventListener('touchmove',e=>{
-  if(e.target.closest('#panel')||e.target.closest('#gear')) return;
-  if(touchMode==='rot' && e.touches.length===1){ const x=e.touches[0].clientX; state.userRotY += (x-lastX)*0.35; lastX=x; rebuild(); }
-  if(touchMode==='zoom' && e.touches.length===2){ const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; const d=Math.hypot(dx,dy); if(lastDist>0){ state.userScale=Math.max(.35,Math.min(4,state.userScale*(d/lastDist))); rebuild(); } lastDist=d; }
-},{passive:true});
-document.addEventListener('touchend',()=>{ touchMode=null; });
-
-// stats
-const walls=wallItems();
-const ml=walls.reduce((a,w)=>a+(w.value||0),0);
-document.getElementById('statVoiles').textContent=walls.length;
-document.getElementById('statMl').textContent=fmt(ml,1)+' ml';
-document.getElementById('statTr').textContent=tremies().length;
-refreshUI();
-
-
-// Correction iPhone/Safari : force la caméra derrière et le canvas en transparence.
-(function fixCameraBackground(){
-  const scene = document.querySelector('a-scene');
-  function apply(){
-    document.body.style.background = 'transparent';
-    document.documentElement.style.background = 'transparent';
-    const videos = document.querySelectorAll('video,#arjs-video,#arjsVideo');
-    videos.forEach(v => {
-      v.style.position='fixed'; v.style.inset='0';
-      v.style.width='100vw'; v.style.height='100vh'; v.style.objectFit='cover';
-      v.style.zIndex='0'; v.style.background='transparent';
-    });
-    const canvas = document.querySelector('canvas.a-canvas, .a-canvas, canvas');
-    if(canvas){ canvas.style.background='transparent'; canvas.style.position='fixed'; canvas.style.inset='0'; canvas.style.zIndex='2'; }
-    if(scene && scene.renderer){
-      scene.renderer.setClearColor(new THREE.Color(0x000000), 0);
-      scene.renderer.autoClear = true;
-      if(scene.renderer.domElement) scene.renderer.domElement.style.background='transparent';
-    }
-  }
-  if(scene) scene.addEventListener('loaded', apply);
-  setInterval(apply, 700);
-})();
-</script>
-</body>
-</html>
+const PLAN_DATA={"scale":0.01765480770527236,"items":[{"id":"dadfcd8f","name":"Voile #001","mtype":"VOILE","pts_pdf":[[472.75,666.75],[473.0,614.5]],"value":0.922474261635566,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":1,"deduct_desc":""},{"id":"ba32b817","name":"Voile #002","mtype":"VOILE","pts_pdf":[[472.75,514.25],[472.75,374.0]],"value":2.476086780664448,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":2,"deduct_desc":""},{"id":"5aa17941","name":"Voile #003","mtype":"VOILE","pts_pdf":[[472.75,273.0],[472.75,206.5]],"value":1.174044712400612,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":3,"deduct_desc":""},{"id":"7e2f6a3c","name":"Voile #004","mtype":"VOILE","pts_pdf":[[483.0,216.75],[990.0,216.75]],"value":8.950987506573087,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":4,"deduct_desc":""},{"id":"f1d56590","name":"Voile #005","mtype":"VOILE","pts_pdf":[[979.25,328.25],[979.5,216.75]],"value":1.9685160072279793,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":5,"deduct_desc":""},{"id":"1033ac26","name":"Voile #006","mtype":"VOILE","pts_pdf":[[989.75,328.25],[1352.75,328.5]],"value":6.408696716883496,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":6,"deduct_desc":""},{"id":"6ecf2b33","name":"Voile #007","mtype":"VOILE","pts_pdf":[[1342.250177156531,328.49276871704996],[1342.25,886.25]],"value":9.847096664526099,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":7,"deduct_desc":""},{"id":"567ea88b","name":"Voile #008","mtype":"VOILE","pts_pdf":[[1367.25,876.25],[1352.25,876.25]],"value":0.2648221155790854,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":8,"deduct_desc":""},{"id":"f599fb17","name":"Voile #009","mtype":"VOILE","pts_pdf":[[1342.2500032556359,876.0000001588126],[1292.5,876.0]],"value":0.8783267408149252,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":9,"deduct_desc":""},{"id":"eb838f83","name":"Voile #010","mtype":"VOILE","pts_pdf":[[1209.0,886.25],[1137.75,886.0]],"value":1.2579127923135356,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":10,"deduct_desc":""},{"id":"542ac391","name":"Voile #011","mtype":"VOILE","pts_pdf":[[1053.75,886.25],[994.25,886.0]],"value":1.0504703309058199,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":11,"deduct_desc":""},{"id":"e38e9635","name":"Voile #012","mtype":"VOILE","pts_pdf":[[994.5,875.5],[994.25,666.5]],"value":3.6898574501748582,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":12,"deduct_desc":""},{"id":"e3caee91","name":"Voile #013","mtype":"VOILE","pts_pdf":[[930.25,656.75],[1004.75,656.75]],"value":1.3152831740427908,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":13,"deduct_desc":""},{"id":"1b5c9921","name":"Voile #014","mtype":"VOILE","pts_pdf":[[989.75,328.25],[989.75,656.75]],"value":5.79960433118197,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":14,"deduct_desc":""},{"id":"c1cda8ec","name":"Voile #015","mtype":"VOILE","pts_pdf":[[1357.25,886.25],[1356.75,931.75]],"value":0.8033422513446892,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":15,"deduct_desc":""},{"id":"2c73adf1","name":"Voile #016","mtype":"VOILE","pts_pdf":[[1367.0,921.25],[1416.5,921.25]],"value":0.8739129814109818,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":16,"deduct_desc":""},{"id":"0cb14bbb","name":"Voile #017","mtype":"VOILE","pts_pdf":[[1540.5,921.25],[1691.0,921.25]],"value":2.6570485596434903,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":17,"deduct_desc":""},{"id":"4d97e270","name":"Voile #018","mtype":"VOILE","pts_pdf":[[1610.5,921.25],[1610.5,703.25]],"value":3.8487480797493743,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":18,"deduct_desc":""},{"id":"74481fae","name":"Voile #019","mtype":"VOILE","pts_pdf":[[1814.5,931.5],[1874.25,931.75]],"value":1.0548839940356494,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":19,"deduct_desc":""},{"id":"21579394","name":"Voile #020","mtype":"VOILE","pts_pdf":[[1864.0,921.25],[1864.0,879.5]],"value":0.737088221695121,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":20,"deduct_desc":""},{"id":"7a3f5c59","name":"Voile #021","mtype":"VOILE","pts_pdf":[[1864.0,778.5],[1863.5,638.5]],"value":2.471688841909031,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":21,"deduct_desc":""},{"id":"b40f44d1","name":"Voile #022","mtype":"VOILE","pts_pdf":[[1874.0,537.75],[1874.25,471.25]],"value":1.1740530088034908,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":22,"deduct_desc":""},{"id":"16dabbfc","name":"Voile #023","mtype":"VOILE","pts_pdf":[[1863.75,471.5],[1352.75,471.5]],"value":9.021606737394176,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":23,"deduct_desc":""},{"id":"bbac0511","name":"Voile #024","mtype":"VOILE","pts_pdf":[[1655.25,635.0],[1655.5,481.5]],"value":2.710016576976733,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":24,"deduct_desc":""},{"id":"30599cde","name":"Voile #025","mtype":"VOILE","pts_pdf":[[483.25,656.75],[532.75,656.75]],"value":0.8739129814109818,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":25,"deduct_desc":""},{"id":"b6bb69ef","name":"Voile #026","mtype":"VOILE","pts_pdf":[[656.0,656.5],[807.25,656.5]],"value":2.670289665422444,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":26,"deduct_desc":""},{"id":"02a2d05f","name":"Voile #027","mtype":"VOILE","pts_pdf":[[726.0,656.5],[726.25,438.5]],"value":3.8487506105409315,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":27,"deduct_desc":""},{"id":"0f3b213a","name":"Voile #028","mtype":"VOILE","pts_pdf":[[681.25,369.75],[681.5,216.75]],"value":2.7011891848698903,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":28,"deduct_desc":""},{"id":"44e9ca45","name":"Voile #029","mtype":"VOILE","pts_pdf":[[1864.0,457.5],[1863.75,471.5]],"value":0.24720671278564152,"unit":"ml","thickness_cm":18.0,"height_m":2.8,"m_number":29,"deduct_desc":""},{"id":"9dbe002d","name":"Radier #001","mtype":"RADIER","pts_pdf":[[472.75,666.75],[472.75,206.5],[989.8333740234375,206.5],[989.8333740234375,318.0],[1352.5,318.3333435058594],[1352.75,471.5],[1874.2496831497583,471.33428216431713],[1874.1657034975237,931.7496472949687],[1356.7527972407688,931.4954510900428],[1357.25,886.25],[994.3347732580311,886.0003561901598],[994.2503986529783,666.8332738898953],[472.75,666.75]],"value":212.86014968925244,"unit":"m²","thickness_cm":24.0,"height_m":null,"m_number":30,"deduct_desc":""},{"id":"db3e7c7c","name":"Trémie escalier 2.53×2.36m","mtype":"DEDUCT_DALLE","pts_pdf":[[836.0,216.75],[979.1111450195312,216.75],[979.1111450195312,350.22222900390625],[836.0,350.22222900390625]],"value":-5.953746689529979,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduct_desc":"Trémie escalier 2.53×2.36m"},{"id":"449bcbee","name":"Trémie escalier 2 1.79×2.79m","mtype":"DEDUCT_DALLE","pts_pdf":[[1155.112057734569,328.36388571469325],[1256.4444580078125,328.36388571469325],[1256.4444580078125,486.6666564941406],[1155.112057734569,486.6666564941406]],"value":-4.9999173986228085,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduct_desc":"Trémie escalier 2 1.79×2.79m"},{"id":"7e273357","name":"Trémie  escalier 3 2.77×2.33m","mtype":"DEDUCT_DALLE","pts_pdf":[[1362.6666259765625,482.22222900390625],[1519.5555419921875,482.22222900390625],[1519.5555419921875,614.2222290039062],[1362.6666259765625,614.2222290039062]],"value":-6.454939510393158,"unit":"m²","thickness_cm":null,"height_m":null,"m_number":30,"deduct_desc":"Trémie  escalier 3 2.77×2.33m"}]};
+const state=Object.assign({scale:2.35,height:0.06,rot:0},JSON.parse(localStorage.getItem('nendaz_plan_v3')||'{}'));
+let rootEl,markerEl,group,buildingMade=false;
+function localPt(pt,b,fit){const x=pt[0]*PLAN_DATA.scale;const z=-(pt[1]*PLAN_DATA.scale);return{x:(x-b.cx)*fit,z:(z-b.cz)*fit};}
+function computeBounds(){let xs=[],zs=[];PLAN_DATA.items.forEach(it=>(it.pts_pdf||[]).forEach(p=>{xs.push(p[0]*PLAN_DATA.scale);zs.push(-(p[1]*PLAN_DATA.scale));}));let minX=Math.min(...xs),maxX=Math.max(...xs),minZ=Math.min(...zs),maxZ=Math.max(...zs);return{cx:(minX+maxX)/2,cz:(minZ+maxZ)/2,w:maxX-minX,d:maxZ-minZ};}
+function mat(color,opacity=1){return new THREE.MeshBasicMaterial({color,transparent:opacity<1,opacity,side:THREE.DoubleSide,depthWrite:true});}
+function shapeMesh(points,y,color,opacity){const shape=new THREE.Shape();points.forEach((p,i)=>{if(i===0)shape.moveTo(p.x,p.z);else shape.lineTo(p.x,p.z);});const geo=new THREE.ShapeGeometry(shape);geo.rotateX(-Math.PI/2);const mesh=new THREE.Mesh(geo,mat(color,opacity));mesh.position.y=y;return mesh;}
+function addLine(p1,p2,y,color,width){const dx=p2.x-p1.x,dz=p2.z-p1.z,len=Math.hypot(dx,dz);const geo=new THREE.BoxGeometry(len,0.012,width);const mesh=new THREE.Mesh(geo,mat(color,1));mesh.position.set((p1.x+p2.x)/2,y,(p1.z+p2.z)/2);mesh.rotation.y=-Math.atan2(dz,dx);group.add(mesh);}
+function addWall(p1,p2,thickCm){const dx=p2.x-p1.x,dz=p2.z-p1.z,len=Math.hypot(dx,dz);const h=state.height,t=Math.max(0.022,(thickCm/100)*0.06);const geo=new THREE.BoxGeometry(len,h,t);const mesh=new THREE.Mesh(geo,mat(0x08111f,1));mesh.position.set((p1.x+p2.x)/2,h/2+0.035,(p1.z+p2.z)/2);mesh.rotation.y=-Math.atan2(dz,dx);group.add(mesh);}
+function build(){rootEl=document.getElementById('root'); if(!rootEl||!rootEl.object3D)return; if(group)rootEl.object3D.remove(group); group=new THREE.Group(); rootEl.object3D.add(group); const b=computeBounds(); const fit=1.8/Math.max(b.w,b.d); const radier=PLAN_DATA.items.find(i=>i.mtype==='RADIER'); if(radier){const pts=radier.pts_pdf.map(p=>localPt(p,b,fit));group.add(shapeMesh(pts,0.002,0x64d8ff,.62));for(let i=0;i<pts.length-1;i++)addLine(pts[i],pts[i+1],0.025,0x020617,0.018);} PLAN_DATA.items.filter(i=>i.mtype==='DEDUCT_DALLE').forEach(it=>{const pts=it.pts_pdf.map(p=>localPt(p,b,fit));group.add(shapeMesh(pts,0.045,0xff3333,.95));}); PLAN_DATA.items.filter(i=>i.mtype==='VOILE').forEach(it=>{addWall(localPt(it.pts_pdf[0],b,fit),localPt(it.pts_pdf[1],b,fit),it.thickness_cm||18);}); addLine({x:-.18,z:0},{x:.18,z:0},0.12,0x00ff66,0.035);addLine({x:0,z:-.18},{x:0,z:.18},0.121,0xffcc00,0.035); buildingMade=true; apply();}
+function apply(){if(!rootEl)return;rootEl.object3D.scale.setScalar(state.scale);rootEl.object3D.rotation.y=THREE.MathUtils.degToRad(state.rot);scale.value=state.scale;height.value=state.height;rot.value=state.rot;scaleVal.textContent=state.scale.toFixed(2);heightVal.textContent=state.height.toFixed(3);rotVal.textContent=state.rot+'°';}
+window.addEventListener('load',()=>{markerEl=document.getElementById('marker');setTimeout(build,1200);setTimeout(()=>{if(!buildingMade)build();},2500);markerEl.addEventListener('markerFound',()=>{statusText.textContent='HIRO détecté';});markerEl.addEventListener('markerLost',()=>{statusText.textContent='Vise le HIRO A4';});});
+gear.onclick=()=>panel.classList.toggle('open');scale.oninput=()=>{state.scale=parseFloat(scale.value);apply();};rot.oninput=()=>{state.rot=parseInt(rot.value);apply();};height.oninput=()=>{state.height=parseFloat(height.value);build();};big.onclick=()=>{state.scale=2.6;state.height=.075;build();};fill.onclick=()=>{state.scale=3.5;state.height=.065;build();};save.onclick=()=>{localStorage.setItem('nendaz_plan_v3',JSON.stringify(state));panel.classList.remove('open');};reset.onclick=()=>{localStorage.removeItem('nendaz_plan_v3');location.reload();};
+let lastX=null,pinch=null;document.addEventListener('touchstart',e=>{if(e.target.closest('#panel,#gear'))return;if(e.touches.length===1)lastX=e.touches[0].clientX;if(e.touches.length===2)pinch=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);},{passive:true});document.addEventListener('touchmove',e=>{if(e.target.closest('#panel,#gear'))return;if(e.touches.length===1&&lastX!==null){const x=e.touches[0].clientX;state.rot+=(x-lastX)*0.35;lastX=x;apply();}if(e.touches.length===2&&pinch){const d=Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);state.scale=Math.min(4.5,Math.max(.5,state.scale*(d/pinch)));pinch=d;apply();}},{passive:true});
+</script></body></html>
