@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<title>IMER Live V5 · RS BAT · Mur 2m</title>
+<title>IMER Live V5.2 · Dual IMER · RS BAT</title>
 <style>
   html,body{margin:0;height:100%;background:#000;font-family:-apple-system,Segoe UI,Arial,sans-serif;overflow:hidden}
   #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
@@ -26,7 +26,7 @@
 <body>
 <video id="video" playsinline muted autoplay></video>
 <canvas id="overlay"></canvas>
-<div class="hud"><b>IMER Live</b> <span>Mur 2,00 × 2,00 m</span><span class="badge" id="badge">Recherche…</span></div>
+<div class="hud"><b>IMER Live</b> <span>Mur 2 IMER</span><span class="badge" id="badge">Recherche…</span></div>
 <button id="startBtn">Démarrer la caméra</button>
 <div class="tools">
   <label>Pose <select id="anchorMode">
@@ -34,6 +34,7 @@
     <option value="center">Milieu</option>
     <option value="right">Coin droit</option>
     <option value="front">Devant feuille</option>
+    <option value="between">Entre 2 IMER</option>
   </select></label>
   <label>Stab <select id="stabMode">
     <option value="off">Off</option>
@@ -86,6 +87,13 @@ const HISTORY_MAX = 60;
 const TRACK_MAX_AGE = 90;    // frames : au-delà, on considère la prédiction trop vieille
 const MAX_FRAME_JUMP = 95;   // px travail : au-delà, nouvelle pose suspecte sauf score très fort
 const STAB_FRAMES = {off:0, low:8, med:20, high:45};
+
+// ================= PATCH V5.2 — mode 2 IMER =================
+// Deux feuilles identiques peuvent être utilisées comme deux ancres.
+// Prototype : on différencie A/B par la position image (centre le plus à gauche = A).
+let dualLast = null;
+const DUAL_MAX_AGE = 50;
+
 
 document.getElementById('startBtn').addEventListener('click', async () => {
   try {
@@ -474,6 +482,114 @@ function drawLastMarkersFromCorners(toScr, corners, dashed, conf) {
   octx.restore();
 }
 
+
+function detectImerPosesFromClusters(clusters, gray, thr) {
+  const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
+  const pts = clusters.slice(0, 12);
+  const poses = [];
+  const combos = kCombos(pts, 4);
+
+  combos.forEach(c => {
+    const hull = orderHull(c);
+    if (hull.length !== 4) return;
+    const area = polyArea(hull);
+    if (area < 500) return;
+
+    for (let rev = 0; rev < 2; rev++) {
+      const seq = rev ? hull.slice().reverse() : hull;
+      for (let rot = 0; rot < 4; rot++) {
+        const ordered = [0,1,2,3].map(i => seq[(rot+i)%4]);
+        const h = homography(objC, ordered.map(p => [p.x, p.y]));
+        if (!h) continue;
+        const q = validateImerPose(h, ordered, gray, thr, WW, WH);
+        if (!q.ok) continue;
+        const cc = applyH(h, SPEC.circle.center[0], SPEC.circle.center[1]);
+        poses.push({h, ordered, q, center:{x:cc[0], y:cc[1]}, area});
+      }
+    }
+  });
+
+  poses.sort((a,b) => b.q.score - a.q.score);
+  const picked = [];
+  for (const p of poses) {
+    const dup = picked.some(o => Math.hypot(o.center.x-p.center.x, o.center.y-p.center.y) < 45);
+    if (!dup) picked.push(p);
+    if (picked.length >= 2) break;
+  }
+  return picked;
+}
+
+function updateDualAnchors(poses) {
+  if (!poses || poses.length < 2) return null;
+  const sorted = poses.slice(0,2).sort((a,b)=>a.center.x-b.center.x);
+  const a = sorted[0], b = sorted[1];
+  const sep = Math.hypot(a.center.x-b.center.x, a.center.y-b.center.y);
+  if (sep < 70) return null;
+  dualLast = {a, b, frame:frameId, sep, score:(a.q.score+b.q.score)/2};
+  return dualLast;
+}
+
+function getDualFallback() {
+  if (!dualLast) return null;
+  if (frameId - dualLast.frame > DUAL_MAX_AGE) return null;
+  return dualLast;
+}
+
+function drawWallBetweenDual(dual, toScr, estimated) {
+  const ca = hToScreen(dual.a.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1]);
+  const cb = hToScreen(dual.b.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1]);
+  const va = {x:cb.x-ca.x, y:cb.y-ca.y};
+  const lenPx = Math.hypot(va.x, va.y);
+  if (lenPx < 40) return false;
+  const dir = unit(va);
+  const normal = {x:-dir.y, y:dir.x};
+
+  const aRy = hToScreen(dual.a.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1] + 100);
+  const bRy = hToScreen(dual.b.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1] + 100);
+  const mmToPxA = Math.hypot(aRy.x-ca.x, aRy.y-ca.y) / 100;
+  const mmToPxB = Math.hypot(bRy.x-cb.x, bRy.y-cb.y) / 100;
+  const mmToPx = clamp((mmToPxA + mmToPxB) / 2, 0.05, 2.5);
+  const thPx = clamp(WALL.th * mmToPx, 10, 90);
+  const heightPx = clamp(WALL.height * mmToPx * 0.72, 120, overlay.height * 0.72);
+
+  // Base du mur exactement entre les deux centres IMER.
+  const b0 = {x:ca.x + normal.x*thPx/2, y:ca.y + normal.y*thPx/2};
+  const b1 = {x:cb.x + normal.x*thPx/2, y:cb.y + normal.y*thPx/2};
+  const b2 = {x:cb.x - normal.x*thPx/2, y:cb.y - normal.y*thPx/2};
+  const b3 = {x:ca.x - normal.x*thPx/2, y:ca.y - normal.y*thPx/2};
+  const up = {x:0, y:-1};
+  const t0 = {x:b0.x + up.x*heightPx, y:b0.y + up.y*heightPx};
+  const t1 = {x:b1.x + up.x*heightPx, y:b1.y + up.y*heightPx};
+  const t2 = {x:b2.x + up.x*heightPx, y:b2.y + up.y*heightPx};
+  const t3 = {x:b3.x + up.x*heightPx, y:b3.y + up.y*heightPx};
+
+  drawPoly([b0,b1,t1,t0], estimated ? 'rgba(245,158,11,0.35)' : 'rgba(192,132,87,0.70)', '#374151', 2);
+  drawPoly([b1,b2,t2,t1], estimated ? 'rgba(245,158,11,0.26)' : 'rgba(214,158,110,0.62)', '#374151', 2);
+  drawPoly([b2,b3,t3,t2], estimated ? 'rgba(245,158,11,0.20)' : 'rgba(168,111,72,0.45)', '#374151', 1.5);
+
+  octx.save();
+  octx.lineWidth = 5;
+  octx.strokeStyle = estimated ? '#f59e0b' : '#d4001a';
+  octx.beginPath(); octx.moveTo(ca.x,ca.y); octx.lineTo(cb.x,cb.y); octx.stroke();
+  octx.setLineDash([8,8]);
+  octx.lineWidth = 3;
+  octx.strokeStyle = '#0f766e';
+  octx.beginPath(); octx.arc(ca.x, ca.y, 16, 0, Math.PI*2); octx.stroke();
+  octx.beginPath(); octx.arc(cb.x, cb.y, 16, 0, Math.PI*2); octx.stroke();
+  octx.restore();
+
+  const lx = (t0.x+t1.x)/2, ly = (t0.y+t1.y)/2 - 12;
+  octx.font = 'bold 16px -apple-system, Arial';
+  octx.textAlign = 'center';
+  octx.fillStyle = '#fff';
+  octx.strokeStyle = 'rgba(0,0,0,.65)';
+  octx.lineWidth = 5;
+  const metres = (lenPx / mmToPx / 1000).toFixed(2).replace('.', ',');
+  octx.strokeText('Mur entre 2 IMER · ' + metres + ' m', lx, ly);
+  octx.fillText('Mur entre 2 IMER · ' + metres + ' m', lx, ly);
+  return true;
+}
+
 /* ================= Boucle principale ================= */
 function loop() {
   requestAnimationFrame(loop);
@@ -526,32 +642,24 @@ function loop() {
     onLost('Recherche… (' + clusters.length + '/4 coins)'); return;
   }
 
-  // Sélection robuste : on teste toutes les combinaisons et on rejette les faux positifs.
+  // Sélection robuste : on détecte toutes les feuilles IMER possibles.
   const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
-  const pts = clusters.slice(0, 8);
-  let bestH = null, bestScore = -1e9;
-  const combos = kCombos(pts, 4);
+  const poses = detectImerPosesFromClusters(clusters, gray, thr);
 
-  combos.forEach(c => {
-    const hull = orderHull(c);
-    if (hull.length !== 4) return;
-    const area = polyArea(hull);
-    if (area < 500) return;
-
-    for (let rev = 0; rev < 2; rev++) {
-      const seq = rev ? hull.slice().reverse() : hull;
-      for (let rot = 0; rot < 4; rot++) {
-        const ordered = [0,1,2,3].map(i => seq[(rot+i)%4]);
-        const h = homography(objC, ordered.map(p => [p.x, p.y]));
-        if (!h) continue;
-
-        const q = validateImerPose(h, ordered, gray, thr, WW, WH);
-        if (!q.ok) continue;
-        if (q.score > bestScore) { bestScore = q.score; bestH = {h, ordered, q}; }
-      }
+  if (anchorMode.value === 'between') {
+    const dual = updateDualAnchors(poses) || getDualFallback();
+    if (dual) {
+      const age = frameId - dual.frame;
+      badge.textContent = (age ? 'IMER 2 ancres estimé' : 'IMER 2 ancres ✓') + ' · ' + fps + ' fps';
+      badge.classList.toggle('ok', !age);
+      badge.classList.toggle('warn', !!age);
+      foot.textContent = 'Mode 2 IMER : mur accroché entre les deux centres · ' + (age ? 'pose gardée ' + age + ' images.' : '2 cibles validées.');
+      drawWallBetweenDual(dual, toScr, !!age);
+      return;
     }
-  });
+  }
 
+  const bestH = poses[0] || null;
   if (!bestH) {
     if (drawTrackedFallback(toScr, clusters, 'cible partielle')) return;
     if (drawStabilized(toScr, 'Cible momentanément perdue')) return;
