@@ -801,6 +801,112 @@ function updateDebugPanel(data) {
   if (debugPanel) debugPanel.textContent = lines.join('\n');
 }
 
+
+
+/* ================= PATCH V5.9 — mur forcé depuis clusters =================
+   Objectif: faire apparaître le mur dès que 3-4 marqueurs sont vus, même si la validation
+   géométrique IMER complète échoue. C'est un mode chantier/debug volontairement tolérant. */
+function splitClustersForDual(clusters) {
+  if (!clusters || clusters.length < 4) return null;
+  const pts = clusters.slice(0, Math.min(12, clusters.length));
+  function splitBy(key) {
+    const arr = pts.slice().sort((a,b)=>a[key]-b[key]);
+    let bestI = -1, bestGap = -1;
+    for (let i=1;i<arr.length;i++) {
+      const gap = arr[i][key] - arr[i-1][key];
+      if (gap > bestGap) { bestGap = gap; bestI = i; }
+    }
+    return {a:arr.slice(0,bestI), b:arr.slice(bestI), gap:bestGap};
+  }
+  const sx = splitBy('x'), sy = splitBy('y');
+  let sp = sx.gap >= sy.gap ? sx : sy;
+  if (sp.a.length < 2 || sp.b.length < 2) sp = sp === sx ? sy : sx;
+  if (sp.a.length < 2 || sp.b.length < 2) return null;
+  const center = g => ({
+    x:g.reduce((a,p)=>a+p.x,0)/g.length,
+    y:g.reduce((a,p)=>a+p.y,0)/g.length,
+    size:g.reduce((a,p)=>a+(p.size||14),0)/g.length,
+    n:g.length
+  });
+  let A = center(sp.a), B = center(sp.b);
+  if (A.x > B.x) [A,B] = [B,A];
+  const sep = Math.hypot(B.x-A.x, B.y-A.y);
+  if (sep < 60) return null;
+  return {A,B,groups:sp};
+}
+
+function drawForcedWallBetweenClusters(clusters, toScr) {
+  const sp = splitClustersForDual(clusters);
+  if (!sp) return false;
+  const ca = toScr({x:sp.A.x, y:sp.A.y});
+  const cb = toScr({x:sp.B.x, y:sp.B.y});
+  const v = {x:cb.x-ca.x, y:cb.y-ca.y};
+  const lenPx = Math.hypot(v.x,v.y);
+  if (lenPx < 50) return false;
+  const dir = unit(v);
+  const normal = {x:-dir.y, y:dir.x};
+  const pxPerMarker = ((sp.A.size + sp.B.size) / 2) * (Math.max(overlay.width/WW, overlay.height/WH));
+  const thPx = clamp(pxPerMarker * 2.6, 12, 85);
+  const heightPx = clamp(pxPerMarker * 28, 140, overlay.height * 0.68);
+  const b0 = {x:ca.x + normal.x*thPx/2, y:ca.y + normal.y*thPx/2};
+  const b1 = {x:cb.x + normal.x*thPx/2, y:cb.y + normal.y*thPx/2};
+  const b2 = {x:cb.x - normal.x*thPx/2, y:cb.y - normal.y*thPx/2};
+  const b3 = {x:ca.x - normal.x*thPx/2, y:ca.y - normal.y*thPx/2};
+  const up = {x:0, y:-1};
+  const t0 = {x:b0.x, y:b0.y-heightPx};
+  const t1 = {x:b1.x, y:b1.y-heightPx};
+  const t2 = {x:b2.x, y:b2.y-heightPx};
+  const t3 = {x:b3.x, y:b3.y-heightPx};
+  drawPoly([b0,b1,t1,t0], 'rgba(245,158,11,0.38)', '#374151', 2);
+  drawPoly([b1,b2,t2,t1], 'rgba(245,158,11,0.28)', '#374151', 2);
+  drawPoly([b2,b3,t3,t2], 'rgba(245,158,11,0.20)', '#374151', 1.5);
+  octx.save();
+  octx.lineWidth = 5; octx.strokeStyle = '#f59e0b';
+  octx.beginPath(); octx.moveTo(ca.x,ca.y); octx.lineTo(cb.x,cb.y); octx.stroke();
+  octx.setLineDash([8,8]); octx.lineWidth = 3; octx.strokeStyle = '#22c55e';
+  octx.beginPath(); octx.arc(ca.x,ca.y,18,0,Math.PI*2); octx.stroke();
+  octx.beginPath(); octx.arc(cb.x,cb.y,18,0,Math.PI*2); octx.stroke();
+  octx.restore();
+  const lx=(t0.x+t1.x)/2, ly=(t0.y+t1.y)/2-12;
+  octx.font='bold 16px -apple-system, Arial'; octx.textAlign='center';
+  octx.fillStyle='#fff'; octx.strokeStyle='rgba(0,0,0,.65)'; octx.lineWidth=5;
+  octx.strokeText('Mur forcé entre 2 IMER', lx, ly); octx.fillText('Mur forcé entre 2 IMER', lx, ly);
+  return true;
+}
+
+function forcedOrderedQuadFromClusters(clusters) {
+  if (!clusters || clusters.length < 3) return null;
+  const pts = clusters.slice(0, Math.min(8, clusters.length));
+  // Cherche le meilleur groupe de 4 si possible : aire max raisonnable.
+  let best = null, bestArea = -1;
+  const sets = pts.length >= 4 ? kCombos(pts,4) : [];
+  for (const set of sets) {
+    const h = orderHull(set);
+    if (h.length !== 4) continue;
+    const a = polyArea(h);
+    if (a > bestArea) { bestArea=a; best=h; }
+  }
+  if (best) return best;
+  // Fallback 3 coins : infère le 4e par boîte englobante orientée simple.
+  const xs = pts.map(p=>p.x), ys = pts.map(p=>p.y);
+  return [
+    {x:Math.min(...xs), y:Math.min(...ys)},
+    {x:Math.max(...xs), y:Math.min(...ys)},
+    {x:Math.max(...xs), y:Math.max(...ys)},
+    {x:Math.min(...xs), y:Math.max(...ys)}
+  ];
+}
+
+function drawForcedSingleFromClusters(clusters, toScr) {
+  const quad = forcedOrderedQuadFromClusters(clusters);
+  if (!quad) return false;
+  const h = homography([SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL], quad.map(p=>[p.x,p.y]));
+  if (!h) return false;
+  drawWallAnchored(h, toScr, true);
+  drawLastMarkersFromCorners(toScr, quad.map(p=>[p.x,p.y]), true, 0.5);
+  return true;
+}
+
 /* ================= Boucle principale ================= */
 function loop() {
   requestAnimationFrame(loop);
@@ -876,14 +982,29 @@ function loop() {
       drawWallBetweenDual(dual, toScr, !!age);
       return;
     }
+    // V5.9 : mode forcé. Si les feuilles ne passent pas la validation complète,
+    // on dessine quand même le mur à partir des groupes de marqueurs visibles.
+    if (clusters.length >= 4 && drawForcedWallBetweenClusters(clusters, toScr)) {
+      badge.textContent = 'IMER forcé · 2 ancres approximatives · ' + clusters.length + ' coins';
+      badge.classList.remove('ok'); badge.classList.add('warn');
+      foot.textContent = 'Mode forcé V5.9 : mur affiché depuis les clusters. Précision approximative, utile pour debugger.';
+      return;
+    }
     badge.textContent = 'Recherche 2 IMER… (' + poses.length + '/2 cibles · ' + clusters.length + ' coins)';
     badge.classList.remove('ok');
     badge.classList.add('warn');
-    foot.textContent = 'Mode 2 IMER V5.3 : éloigne-toi assez pour voir les 2 feuilles entières. Une feuille seule ne suffit pas.';
+    foot.textContent = 'Mode 2 IMER V5.9 : il faut au moins 4 marqueurs visibles pour forcer le mur entre les feuilles.';
   }
 
   const bestH = poses[0] || null;
   if (!bestH) {
+    // V5.9 : même en mode 1 IMER, afficher un mur approximatif dès que 3-4 coins existent.
+    if (clusters.length >= 3 && drawForcedSingleFromClusters(clusters, toScr)) {
+      badge.textContent = 'IMER forcé · ' + clusters.length + ' coins';
+      badge.classList.remove('ok'); badge.classList.add('warn');
+      foot.textContent = 'Mur forcé V5.9 : affichage approximatif sans validation complète de la cible.';
+      return;
+    }
     if (drawTrackedFallback(toScr, clusters, 'cible partielle')) return;
     if (drawStabilized(toScr, 'Cible momentanément perdue')) return;
     onLost('Faux coins rejetés · cible non validée'); return;
