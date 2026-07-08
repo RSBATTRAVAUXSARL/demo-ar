@@ -511,46 +511,179 @@ function drawLastMarkersFromCorners(toScr, corners, dashed, conf) {
 
 function detectImerPosesFromClusters(clusters, gray, thr) {
   const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
-  const pts = clusters.slice(0, anchorMode.value === 'between' ? 24 : 8);
+  const pts = clusters.slice(0, anchorMode.value === 'between' ? 24 : 12);
   const poses = [];
-  const combos = kCombos(pts, 4);
   const rejectStats = {};
-  const comboStats = {combos:combos.length, hull:0, area:0, h:0, validated:0};
+  const comboStats = {combos:0, hull:0, area:0, h:0, validated:0, triplets:0, loose:0};
+  const rej = (r) => { rejectStats[r || 'rejet inconnu'] = (rejectStats[r || 'rejet inconnu']||0)+1; };
 
+  function pushPose(ordered, mode) {
+    const area = polyArea(ordered);
+    const minArea = anchorMode.value === 'between' ? 80 : 180;
+    if (area < minArea) { rej(mode + ' quad trop petit'); return; }
+    comboStats.area++;
+    const h = homography(objC, ordered.map(p => [p.x, p.y]));
+    if (!h) { rej(mode + ' homographie null'); return; }
+    comboStats.h++;
+
+    let q = validateImerPose(h, ordered, gray, thr, WW, WH);
+    let loose = false;
+    if (!q.ok) {
+      q = validateImerPoseLoose(h, ordered, gray, thr, WW, WH, mode);
+      loose = q.ok;
+    }
+    if (!q.ok) { rej(q.reason || (mode + ' rejet')); return; }
+    comboStats.validated++;
+    if (loose) comboStats.loose++;
+    const cc = applyH(h, SPEC.circle.center[0], SPEC.circle.center[1]);
+    if (!Number.isFinite(cc[0]) || !Number.isFinite(cc[1])) { rej('centre non fini'); return; }
+    poses.push({h, ordered, q, center:{x:cc[0], y:cc[1]}, area, loose, mode});
+  }
+
+  // 1) Strict/loose sur 4 marqueurs détectés.
+  const combos = kCombos(pts, 4);
+  comboStats.combos = combos.length;
   combos.forEach(c => {
     const hull = orderHull(c);
-    if (hull.length !== 4) { rejectStats['hull invalide'] = (rejectStats['hull invalide']||0)+1; return; }
+    if (hull.length !== 4) { rej('hull invalide'); return; }
     comboStats.hull++;
     const area = polyArea(hull);
-    if (area < (anchorMode.value === 'between' ? 120 : 500)) { rejectStats['quad trop petit'] = (rejectStats['quad trop petit']||0)+1; return; }
-    comboStats.area++;
+    if (area < (anchorMode.value === 'between' ? 80 : 180)) { rej('quad trop petit'); return; }
 
     for (let rev = 0; rev < 2; rev++) {
       const seq = rev ? hull.slice().reverse() : hull;
       for (let rot = 0; rot < 4; rot++) {
         const ordered = [0,1,2,3].map(i => seq[(rot+i)%4]);
-        const h = homography(objC, ordered.map(p => [p.x, p.y]));
-        if (!h) { rejectStats['homographie null'] = (rejectStats['homographie null']||0)+1; continue; }
-        comboStats.h++;
-        const q = validateImerPose(h, ordered, gray, thr, WW, WH);
-        if (!q.ok) { rejectStats[q.reason || 'rejet inconnu'] = (rejectStats[q.reason || 'rejet inconnu']||0)+1; continue; }
-        comboStats.validated++;
-        const cc = applyH(h, SPEC.circle.center[0], SPEC.circle.center[1]);
-        poses.push({h, ordered, q, center:{x:cc[0], y:cc[1]}, area});
+        pushPose(ordered, '4c');
       }
+    }
+  });
+
+  // 2) Nouveau patch V5.8 : pose reconstruite avec seulement 3 coins.
+  // Si un coin est raté, on infère le 4e par parallélogramme et on valide surtout
+  // avec la feuille blanche + les grands motifs internes. C'est volontairement
+  // plus tolérant pour le mode chantier / deux feuilles éloignées.
+  const triplets = kCombos(pts, 3);
+  comboStats.triplets = triplets.length;
+  const labelSets = [
+    {miss:0, labels:[1,2,3]}, // manque TL : TL = TR + BL - BR
+    {miss:1, labels:[0,2,3]}, // manque TR : TR = TL + BR - BL
+    {miss:2, labels:[0,1,3]}, // manque BR : BR = TR + BL - TL
+    {miss:3, labels:[0,1,2]}  // manque BL : BL = TL + BR - TR
+  ];
+  function inferMissing(arr, miss) {
+    const p = arr.map(v => v ? {x:v.x, y:v.y, size:v.size||0, conf:v.conf||0} : null);
+    if (miss === 0) p[0] = {x:p[1].x + p[3].x - p[2].x, y:p[1].y + p[3].y - p[2].y, size:(p[1].size+p[2].size+p[3].size)/3, conf:1, inferred:true};
+    if (miss === 1) p[1] = {x:p[0].x + p[2].x - p[3].x, y:p[0].y + p[2].y - p[3].y, size:(p[0].size+p[2].size+p[3].size)/3, conf:1, inferred:true};
+    if (miss === 2) p[2] = {x:p[1].x + p[3].x - p[0].x, y:p[1].y + p[3].y - p[0].y, size:(p[0].size+p[1].size+p[3].size)/3, conf:1, inferred:true};
+    if (miss === 3) p[3] = {x:p[0].x + p[2].x - p[1].x, y:p[0].y + p[2].y - p[1].y, size:(p[0].size+p[1].size+p[2].size)/3, conf:1, inferred:true};
+    return p;
+  }
+  triplets.forEach(tri => {
+    for (const ls of labelSets) {
+      const arr = [null,null,null,null];
+      for (let i=0;i<3;i++) arr[ls.labels[i]] = tri[i];
+      const ordered = inferMissing(arr, ls.miss);
+      const inf = ordered[ls.miss];
+      if (inf.x < -WW*0.15 || inf.y < -WH*0.15 || inf.x > WW*1.15 || inf.y > WH*1.15) { rej('3c coin inféré hors image'); continue; }
+      const d01 = Math.hypot(ordered[0].x-ordered[1].x, ordered[0].y-ordered[1].y);
+      const d32 = Math.hypot(ordered[3].x-ordered[2].x, ordered[3].y-ordered[2].y);
+      const d03 = Math.hypot(ordered[0].x-ordered[3].x, ordered[0].y-ordered[3].y);
+      const d12 = Math.hypot(ordered[1].x-ordered[2].x, ordered[1].y-ordered[2].y);
+      if (Math.min(d01,d32,d03,d12) < 18) { rej('3c côtés courts'); continue; }
+      if (Math.max(d01,d32)/Math.min(d01,d32) > 3.8) { rej('3c haut/bas incoh'); continue; }
+      if (Math.max(d03,d12)/Math.min(d03,d12) > 3.8) { rej('3c gauche/droite incoh'); continue; }
+      pushPose(ordered, '3c miss'+ls.miss);
     }
   });
 
   lastRejectStats = rejectStats;
   lastComboStats = comboStats;
-  poses.sort((a,b) => b.q.score - a.q.score);
+  poses.sort((a,b) => {
+    const al = a.loose ? -250 : 0, bl = b.loose ? -250 : 0;
+    return (b.q.score + bl) - (a.q.score + al);
+  });
   const picked = [];
   for (const p of poses) {
-    const dup = picked.some(o => Math.hypot(o.center.x-p.center.x, o.center.y-p.center.y) < 45);
+    const dup = picked.some(o => Math.hypot(o.center.x-p.center.x, o.center.y-p.center.y) < (anchorMode.value === 'between' ? 90 : 70));
     if (!dup) picked.push(p);
-    if (picked.length >= 2) break;
+    if (picked.length >= (anchorMode.value === 'between' ? 2 : 1)) break;
   }
   return picked;
+}
+
+function validateImerPoseLoose(h, ordered, gray, thr, W, H, mode) {
+  const proj = (p) => {
+    const q = applyH(h, p[0], p[1]);
+    if (!Number.isFinite(q[0]) || !Number.isFinite(q[1])) return null;
+    return {x:q[0], y:q[1]};
+  };
+  const lum = (p, r=2) => {
+    const q = proj(p);
+    if (!q) return null;
+    return sampleLum(gray, W, H, q.x, q.y, r);
+  };
+
+  const pagePoly = [[0,0], [SPEC.page[0],0], SPEC.page, [0,SPEC.page[1]]].map(proj);
+  if (pagePoly.some(p => !p)) return {ok:false, score:-999, reason:'loose page hors champ'};
+  const pageArea = polyArea(pagePoly);
+  if (pageArea < (anchorMode.value === 'between' ? 700 : 1300)) return {ok:false, score:-999, reason:'loose feuille trop petite'};
+  const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+  const sides = [d(pagePoly[0],pagePoly[1]), d(pagePoly[1],pagePoly[2]), d(pagePoly[2],pagePoly[3]), d(pagePoly[3],pagePoly[0])];
+  if (Math.min(...sides) < 14) return {ok:false, score:-999, reason:'loose côtés trop courts'};
+  if (Math.max(...sides)/Math.min(...sides) > 7.0) return {ok:false, score:-999, reason:'loose perspective extrême'};
+
+  const center = proj(SPEC.circle.center);
+  if (!center || !pointInPoly(center, pagePoly)) return {ok:false, score:-999, reason:'loose centre hors feuille'};
+
+  const whitePts = [
+    [210,18], [210,279], [20,148], [400,148], [210,148.5],
+    [145,148], [275,148], [145,90], [275,90], [145,207], [275,207],
+    [85,80], [335,80], [85,225], [335,225]
+  ];
+  const whiteVals = whitePts.map(p => lum(p, 3)).filter(v => v !== null);
+  if (whiteVals.length < 8) return {ok:false, score:-999, reason:'loose feuille incomplète'};
+  const avgWhite = whiteVals.reduce((a,b)=>a+b,0) / whiteVals.length;
+  const whiteLimit = Math.max(125, thr + 18);
+  const whiteOk = whiteVals.filter(v => v > whiteLimit).length;
+  if (avgWhite < whiteLimit - 8 || whiteOk < Math.ceil(whiteVals.length * 0.45)) {
+    return {ok:false, score:-999, reason:'loose pas assez blanc'};
+  }
+
+  // Coins : on ne bloque plus à 4/4. On les utilise seulement comme bonus.
+  const cornerPts = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
+  let cornerOk = 0, cornerScore = 0;
+  for (const c of cornerPts) {
+    const q0 = lum(c, 2);
+    const mid = avgSamples(gray, W, H, [[c[0]+5,c[1]],[c[0]-5,c[1]],[c[0],c[1]+5],[c[0],c[1]-5]].map(o=>{
+      const q=applyH(h,o[0],o[1]); return q;
+    }), 1);
+    const bg = avgSamples(gray, W, H, [[c[0]+16,c[1]],[c[0]-16,c[1]],[c[0],c[1]+16],[c[0],c[1]-16]].map(o=>{
+      const q=applyH(h,o[0],o[1]); return q;
+    }), 1);
+    if (q0 !== null && mid !== null && bg !== null && bg - q0 > 35 && mid - q0 > 18) { cornerOk++; cornerScore += (bg - q0) + (mid - q0); }
+  }
+
+  const blackChecks = [
+    [60,130], [60,170], [360,130], [360,170],
+    [100,52], [320,52], [100,245], [320,245],
+    [122,120], [298,177], [210,70], [210,228]
+  ];
+  let blackOk = 0, blackScore = 0;
+  for (const p of blackChecks) {
+    const v = lum(p, 2);
+    if (v !== null && avgWhite - v > 22) { blackOk++; blackScore += avgWhite - v; }
+  }
+  if (blackOk < 4) return {ok:false, score:-999, reason:'loose motifs internes faibles'};
+
+  // Le disque asymétrique est un bonus, pas un verrou, car il est souvent petit / flou à distance.
+  let asym = 0;
+  const discLum = lum(SPEC.asym_disc.center, 2);
+  const mirrorLum = lum([SPEC.page[0]-SPEC.asym_disc.center[0], SPEC.asym_disc.center[1]], 2);
+  if (discLum !== null && mirrorLum !== null) asym = Math.max(0, mirrorLum - discLum);
+
+  const score = Math.round(pageArea/90 + blackScore + cornerScore*0.6 + asym + cornerOk*120 + (avgWhite-whiteLimit)*1.5);
+  return {ok:true, score, reason:'loose ok · ' + mode + ' · coins ' + cornerOk + '/4 · motifs ' + blackOk};
 }
 
 function updateDualAnchors(poses) {
@@ -644,7 +777,7 @@ function drawDebugCandidates(toScr, ratioCands, squareCands, clusters, poses) {
     const pts = p.ordered.map(q => toScr({x:q.x,y:q.y}));
     octx.strokeStyle = '#22c55e'; octx.lineWidth = 4;
     octx.beginPath(); pts.forEach((pt,k)=> k ? octx.lineTo(pt.x,pt.y) : octx.moveTo(pt.x,pt.y)); octx.closePath(); octx.stroke();
-    const c = toScr(p.center); octx.fillStyle = '#22c55e'; octx.fillText('POSE '+i+' score '+Math.round(p.q.score), c.x+8, c.y);
+    const c = toScr(p.center); octx.fillStyle = '#22c55e'; octx.fillText('POSE '+i+' '+(p.loose?'LOOSE ':'')+'score '+Math.round(p.q.score), c.x+8, c.y);
   });
   octx.restore();
 }
@@ -661,7 +794,7 @@ function updateDebugPanel(data) {
     `VIDEO ${data.vw}x${data.vh} | WORK ${data.WW}x${data.WH} | fps ${fps}`,
     `lum avg ${data.avg.toFixed(1)} | min ${data.min} max ${data.max} | otsu thr ${data.thr} | noirs ${(data.blackPct*100).toFixed(1)}%`,
     `candidats ratio ${data.ratioCount} | carrés ${data.squareCount} | clusters ${data.clusterCount} | poses ${data.poseCount}`,
-    `combos ${lastComboStats.combos||0} | hull ${lastComboStats.hull||0} | area ${lastComboStats.area||0} | H ${lastComboStats.h||0} | valid ${lastComboStats.validated||0}`,
+    `combos ${lastComboStats.combos||0} | triplets ${lastComboStats.triplets||0} | hull ${lastComboStats.hull||0} | area ${lastComboStats.area||0} | H ${lastComboStats.h||0} | valid ${lastComboStats.validated||0} | loose ${lastComboStats.loose||0}`,
     `top clusters:\n${topClusters || 'aucun'}`,
     `rejets:\n${rejects}`
   ];
