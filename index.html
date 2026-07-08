@@ -85,21 +85,25 @@ function checkRatios(runs) {
 
 function crossCheck(bin, W, H, cx, cy) {
   // vérifie le motif verticalement à la colonne cx, renvoie le centre vertical raffiné ou null
-  let runs = [0,0,0,0,0], idx = 2, y = cy;
-  while (y >= 0 && bin[y*W+cx]) { runs[2]++; y--; }           // noir central vers le haut
-  let yTop = y;
+  const want = [1,0,1,0,1]; // noir blanc noir blanc noir
+  const runs = [0,0,0,0,0];
+
+  let y = cy;
+  while (y >= 0 && bin[y*W+cx] === 1) { runs[2]++; y--; }
   for (let k = 1; k >= 0; k--) {
-    while (yTop >= 0 && !bin[yTop*W+cx] === (k===1)) { runs[k]++; yTop--; }
+    while (y >= 0 && bin[y*W+cx] === want[k]) { runs[k]++; y--; }
   }
+  const yTop = y;
+
   y = cy + 1;
-  while (y < H && bin[y*W+cx]) { runs[2]++; y++; }
-  let yBot = y;
+  while (y < H && bin[y*W+cx] === 1) { runs[2]++; y++; }
   for (let k = 3; k <= 4; k++) {
-    while (yBot < H && !bin[yBot*W+cx] === (k===3)) { runs[k]++; yBot++; }
+    while (y < H && bin[y*W+cx] === want[k]) { runs[k]++; y++; }
   }
+
   if (!checkRatios(runs)) return null;
   const tot = runs.reduce((a,b)=>a+b,0);
-  return (yTop + tot/2);
+  return yTop + tot/2;
 }
 
 function findBullseyes(bin, W, H) {
@@ -224,11 +228,12 @@ function loop() {
     const g = (d[i*4]*3 + d[i*4+1]*6 + d[i*4+2]) / 10;
     gray[i] = g; sum += g;
   }
-  const thr = (sum/N) * 0.72;
+  const thr = otsuThreshold(gray);              // plus robuste que moyenne*0.72 sur moquette / chantier
   const bin = new Uint8Array(N);
   for (let i = 0; i < N; i++) bin[i] = gray[i] < thr ? 1 : 0;
 
-  const clusters = findBullseyes(bin, WW, WH);
+  const clusters = findBullseyes(bin, WW, WH)
+    .filter(c => c.size >= 7 && c.size <= 70 && c.n >= 3);  // filtre anti-bruit
 
   overlay.width = window.innerWidth * (window.devicePixelRatio||1);
   overlay.height = window.innerHeight * (window.devicePixelRatio||1);
@@ -244,40 +249,33 @@ function loop() {
 
   if (clusters.length < 4) { onLost('Recherche… (' + clusters.length + '/4 coins)'); return; }
 
-  // 4 coins formant le plus grand quadrilatère
-  const pts = clusters.slice(0, 6);
-  let best = null, bestA = -1;
+  // Sélection robuste : on teste toutes les combinaisons et on rejette les faux positifs.
+  const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
+  const pts = clusters.slice(0, 8);
+  let bestH = null, bestScore = -1e9;
   const combos = kCombos(pts, 4);
+
   combos.forEach(c => {
     const hull = orderHull(c);
     if (hull.length !== 4) return;
-    const a = polyArea(hull);
-    if (a > bestA) { bestA = a; best = hull; }
-  });
-  if (!best || bestA < 900) { onLost('Coins trop proches'); return; }
+    const area = polyArea(hull);
+    if (area < 500) return;
 
-  // désambiguïsation par le disque d'asymétrie (8 ordres)
-  const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
-  let bestH = null, bestScore = -1e9;
-  for (let rev = 0; rev < 2; rev++) {
-    const seq = rev ? best.slice().reverse() : best;
-    for (let rot = 0; rot < 4; rot++) {
-      const ordered = [0,1,2,3].map(i => seq[(rot+i)%4]);
-      const h = homography(objC, ordered.map(p => [p.x, p.y]));
-      if (!h) continue;
-      const [dx, dy] = applyH(h, SPEC.asym_disc.center[0], SPEC.asym_disc.center[1]);
-      const [mx, my] = applyH(h, SPEC.page[0]-SPEC.asym_disc.center[0], SPEC.asym_disc.center[1]);
-      const lum = (x,y) => {
-        const xi = Math.round(x), yi = Math.round(y);
-        if (xi < 2 || yi < 2 || xi >= WW-2 || yi >= WH-2) return 255;
-        let s = 0; for (let a=-2;a<=2;a++) for (let b=-2;b<=2;b++) s += gray[(yi+a)*WW + xi+b];
-        return s/25;
-      };
-      const score = lum(mx,my) - lum(dx,dy);
-      if (score > bestScore) { bestScore = score; bestH = {h, ordered}; }
+    for (let rev = 0; rev < 2; rev++) {
+      const seq = rev ? hull.slice().reverse() : hull;
+      for (let rot = 0; rot < 4; rot++) {
+        const ordered = [0,1,2,3].map(i => seq[(rot+i)%4]);
+        const h = homography(objC, ordered.map(p => [p.x, p.y]));
+        if (!h) continue;
+
+        const q = validateImerPose(h, ordered, gray, thr, WW, WH);
+        if (!q.ok) continue;
+        if (q.score > bestScore) { bestScore = q.score; bestH = {h, ordered, q}; }
+      }
     }
-  }
-  if (!bestH || bestScore < 18) { onLost('Orientation incertaine'); return; }
+  });
+
+  if (!bestH) { onLost('Faux coins rejetés · cible non validée'); return; }
 
   // lissage temporel des coins
   const cur = bestH.ordered.map(p => [p.x, p.y]);
@@ -291,7 +289,7 @@ function loop() {
   const dist = Math.hypot(pose.t[0], pose.t[1], pose.t[2]) / 1000;
   badge.textContent = 'IMER ✓ · ' + dist.toFixed(2) + ' m · ' + fps + ' fps';
   badge.classList.add('ok');
-  foot.textContent = 'Mur 2,00 × 2,00 m · ép. 18 cm — posé sur la cible, échelle 1:1.';
+  foot.textContent = 'Mur 2,00 × 2,00 m · ép. 18 cm — cible validée, score ' + Math.round(bestH.q.score) + '.';
 
   // sens "haut" : celui qui monte à l'écran (déterminé une fois)
   if (!upSign) {
@@ -318,7 +316,7 @@ function loop() {
 
 function onLost(msg) {
   lostCount++;
-  if (lostCount > 12) { smooth = null; badge.textContent = msg; badge.classList.remove('ok'); }
+  if (lostCount > 4) { smooth = null; badge.textContent = msg; badge.classList.remove('ok'); }
 }
 
 function drawWall(pose, toScr) {
@@ -329,7 +327,7 @@ function drawWall(pose, toScr) {
     [cx-L, cyv-T], [cx+L, cyv-T], [cx+L, cyv+T], [cx-L, cyv+T]
   ];
   const bot = base.map(p => projectPt(pose, p[0], p[1], 0));
-  const topZ = upSign * -WALL.height;
+  const topZ = upSign * WALL.height;   // correction : le mur monte dans le bon sens
   const top2 = base.map(p => projectPt(pose, p[0], p[1], topZ));
   if (bot.some(p=>!p) || top2.some(p=>!p)) return;
   const faces = [];
@@ -362,6 +360,113 @@ function drawWall(pose, toScr) {
     octx.strokeText('Mur 200 × 200 · ép. 18', s.x, s.y - 12);
     octx.fillText('Mur 200 × 200 · ép. 18', s.x, s.y - 12);
   }
+}
+
+
+/* ================= validation anti-faux positifs ================= */
+function otsuThreshold(gray) {
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+  const total = gray.length;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0, wB = 0, best = 0, bestVar = -1;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > bestVar) { bestVar = v; best = t; }
+  }
+  // sécurité : évite un seuil trop bas quand la scène est majoritairement sombre/grise
+  return Math.max(45, Math.min(210, best));
+}
+
+function sampleLum(gray, W, H, x, y, r=2) {
+  const xi = Math.round(x), yi = Math.round(y);
+  if (xi < r || yi < r || xi >= W-r || yi >= H-r) return null;
+  let s = 0, n = 0;
+  for (let yy = -r; yy <= r; yy++) {
+    for (let xx = -r; xx <= r; xx++) {
+      s += gray[(yi+yy)*W + xi+xx]; n++;
+    }
+  }
+  return s/n;
+}
+
+function validateImerPose(h, ordered, gray, thr, W, H) {
+  const proj = (p) => {
+    const q = applyH(h, p[0], p[1]);
+    if (!Number.isFinite(q[0]) || !Number.isFinite(q[1])) return null;
+    return {x:q[0], y:q[1]};
+  };
+  const lum = (p, r=2) => {
+    const q = proj(p);
+    if (!q) return null;
+    return sampleLum(gray, W, H, q.x, q.y, r);
+  };
+
+  const center = proj(SPEC.circle.center);
+  if (!center || !pointInPoly(center, ordered)) return {ok:false, score:-999};
+
+  // Cohérence de forme : les côtés opposés ne doivent pas être absurdes.
+  const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+  const top = d(ordered[0], ordered[1]), right = d(ordered[1], ordered[2]);
+  const bottom = d(ordered[2], ordered[3]), left = d(ordered[3], ordered[0]);
+  if (Math.min(top,right,bottom,left) < 8) return {ok:false, score:-999};
+  if (Math.max(top,bottom) / Math.min(top,bottom) > 3.2) return {ok:false, score:-999};
+  if (Math.max(left,right) / Math.min(left,right) > 3.2) return {ok:false, score:-999};
+
+  // Le centre vide doit être clair, sinon on est probablement sur la moquette.
+  const centerLum = sampleLum(gray, W, H, center.x, center.y, 3);
+  if (centerLum === null || centerLum < Math.max(95, thr + 8)) return {ok:false, score:-999};
+
+  // Disque asymétrique : noir à gauche, blanc/sans disque au miroir droit.
+  const discLum = lum(SPEC.asym_disc.center, 2);
+  const mirrorLum = lum([SPEC.page[0]-SPEC.asym_disc.center[0], SPEC.asym_disc.center[1]], 2);
+  if (discLum === null || mirrorLum === null) return {ok:false, score:-999};
+  const asym = mirrorLum - discLum;
+  if (asym < 10) return {ok:false, score:-999};
+
+  // Validation avec des éléments internes IMER : colonnes noires et zones blanches.
+  const blackChecks = [
+    [60,130], [60,170], [360,130], [360,170],
+    [100,52], [320,52], [100,245], [320,245]
+  ];
+  const whiteChecks = [
+    SPEC.circle.center, [210,112], [210,185], [210,148.5]
+  ];
+
+  let score = asym + (centerLum - thr);
+  let blackOk = 0;
+  for (const p of blackChecks) {
+    const v = lum(p, 2);
+    if (v !== null && v < thr + 12) { score += (thr + 12 - v); blackOk++; }
+  }
+  let whiteOk = 0;
+  for (const p of whiteChecks) {
+    const v = lum(p, 2);
+    if (v !== null && v > thr + 8) { score += (v - thr); whiteOk++; }
+  }
+  if (blackOk < 4 || whiteOk < 2) return {ok:false, score:-999};
+
+  return {ok:true, score};
+}
+
+function pointInPoly(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const intersect = ((yi > p.y) !== (yj > p.y)) &&
+      (p.x < (xj - xi) * (p.y - yi) / ((yj - yi) || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
 }
 
 /* ================= utilitaires géométrie ================= */
