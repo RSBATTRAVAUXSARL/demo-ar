@@ -907,6 +907,94 @@ function drawForcedSingleFromClusters(clusters, toScr) {
   return true;
 }
 
+
+
+/* ================= PATCH V6.0 — ULTRA FORCE WALL =================
+   Dessine le mur dès qu'il y a au moins 2 marqueurs. Cette voie passe AVANT toute
+   validation IMER : elle sert à prouver que le rendu mur fonctionne même si la pose échoue. */
+function forceAnchorsFromAnyClusters(clusters) {
+  if (!clusters || clusters.length < 2) return null;
+  const pts = clusters.slice(0, Math.min(10, clusters.length));
+  // on ignore les candidats conf très faible si on a assez de points fiables
+  const good = pts.filter(p => (p.conf||0) > 40);
+  const arr = good.length >= 2 ? good : pts;
+  function splitAxis(key) {
+    const a = arr.slice().sort((u,v)=>u[key]-v[key]);
+    let bestGap=-1, bestI=-1;
+    for (let i=1;i<a.length;i++) {
+      const gap = a[i][key]-a[i-1][key];
+      if (gap > bestGap) { bestGap=gap; bestI=i; }
+    }
+    if (bestI <= 0) return null;
+    return {g1:a.slice(0,bestI), g2:a.slice(bestI), gap:bestGap};
+  }
+  const sx = splitAxis('x'), sy = splitAxis('y');
+  let sp = null;
+  if (sx && sy) sp = sx.gap > sy.gap ? sx : sy;
+  else sp = sx || sy;
+  function centroid(g) {
+    return {
+      x:g.reduce((a,p)=>a+p.x,0)/g.length,
+      y:g.reduce((a,p)=>a+p.y,0)/g.length,
+      size:g.reduce((a,p)=>a+(p.size||18),0)/g.length,
+      n:g.length
+    };
+  }
+  let A, B;
+  if (sp && sp.g1.length && sp.g2.length) {
+    A = centroid(sp.g1); B = centroid(sp.g2);
+  } else {
+    // dernier recours : les deux points les plus éloignés
+    let best=[arr[0],arr[1]], bd=-1;
+    for (let i=0;i<arr.length;i++) for (let j=i+1;j<arr.length;j++) {
+      const d=Math.hypot(arr[i].x-arr[j].x, arr[i].y-arr[j].y);
+      if (d>bd) { bd=d; best=[arr[i],arr[j]]; }
+    }
+    A = {x:best[0].x,y:best[0].y,size:best[0].size||18,n:1};
+    B = {x:best[1].x,y:best[1].y,size:best[1].size||18,n:1};
+  }
+  const sep = Math.hypot(B.x-A.x,B.y-A.y);
+  if (sep < 25) return null;
+  return {A,B,sep};
+}
+
+function drawUltraForcedWall(clusters, toScr) {
+  const ab = forceAnchorsFromAnyClusters(clusters);
+  if (!ab) return false;
+  const ca = toScr({x:ab.A.x, y:ab.A.y});
+  const cb = toScr({x:ab.B.x, y:ab.B.y});
+  const v = {x:cb.x-ca.x, y:cb.y-ca.y};
+  const len = Math.hypot(v.x,v.y);
+  if (len < 30) return false;
+  const dir = unit(v);
+  const n = {x:-dir.y, y:dir.x};
+  const scale = Math.max(overlay.width/WW, overlay.height/WH);
+  const mpx = clamp(((ab.A.size||18)+(ab.B.size||18))*0.5*scale, 8, 90);
+  const th = clamp(mpx*2.4, 14, 90);
+  const hgt = clamp(mpx*30, 150, overlay.height*0.72);
+  const b0={x:ca.x+n.x*th/2,y:ca.y+n.y*th/2};
+  const b1={x:cb.x+n.x*th/2,y:cb.y+n.y*th/2};
+  const b2={x:cb.x-n.x*th/2,y:cb.y-n.y*th/2};
+  const b3={x:ca.x-n.x*th/2,y:ca.y-n.y*th/2};
+  const t0={x:b0.x,y:b0.y-hgt}, t1={x:b1.x,y:b1.y-hgt}, t2={x:b2.x,y:b2.y-hgt}, t3={x:b3.x,y:b3.y-hgt};
+  drawPoly([b0,b1,t1,t0], 'rgba(245,158,11,0.48)', '#111827', 3);
+  drawPoly([b1,b2,t2,t1], 'rgba(245,158,11,0.32)', '#111827', 2);
+  drawPoly([b2,b3,t3,t2], 'rgba(245,158,11,0.22)', '#111827', 2);
+  octx.save();
+  octx.lineWidth=6; octx.strokeStyle='#ef4444';
+  octx.beginPath(); octx.moveTo(ca.x,ca.y); octx.lineTo(cb.x,cb.y); octx.stroke();
+  octx.setLineDash([8,8]); octx.lineWidth=3; octx.strokeStyle='#22c55e';
+  octx.beginPath(); octx.arc(ca.x,ca.y,18,0,Math.PI*2); octx.stroke();
+  octx.beginPath(); octx.arc(cb.x,cb.y,18,0,Math.PI*2); octx.stroke();
+  octx.restore();
+  octx.font='bold 17px -apple-system, Arial'; octx.textAlign='center';
+  octx.fillStyle='#fff'; octx.strokeStyle='rgba(0,0,0,.8)'; octx.lineWidth=6;
+  const lx=(t0.x+t1.x)/2, ly=(t0.y+t1.y)/2-10;
+  const txt='MUR FORCÉ · anchors '+ab.A.n+'+'+ab.B.n;
+  octx.strokeText(txt,lx,ly); octx.fillText(txt,lx,ly);
+  return true;
+}
+
 /* ================= Boucle principale ================= */
 function loop() {
   requestAnimationFrame(loop);
@@ -958,6 +1046,15 @@ function loop() {
 
   updateDebugPanel({vw, vh, WW, WH, avg:avgLum, min:Math.round(gmin), max:Math.round(gmax), thr, blackPct:blackN/N, ratioCount:ratioCands.length, squareCount:squareCands.length, clusterCount:clusters.length, poseCount:0, clusters});
   drawDebugCandidates(toScr, ratioCands, squareCands, clusters, []);
+
+  // V6.0 : en mode Entre 2 IMER, on force le mur immédiatement dès 2 marqueurs.
+  // Cela contourne complètement la validation de pose pour debugger le rendu.
+  if (anchorMode.value === 'between' && clusters.length >= 2 && drawUltraForcedWall(clusters, toScr)) {
+    badge.textContent = 'MUR FORCÉ ✓ · ' + clusters.length + ' marqueurs · ' + fps + ' fps';
+    badge.classList.remove('ok'); badge.classList.add('warn');
+    foot.textContent = 'V6.0 UltraForce : mur affiché depuis les marqueurs visibles, sans validation complète IMER.';
+    return;
+  }
 
   if (clusters.length < 4) {
     if (drawTrackedFallback(toScr, clusters, 'Recherche… (' + clusters.length + '/4 coins)')) return;
