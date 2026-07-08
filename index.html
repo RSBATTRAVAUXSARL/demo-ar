@@ -410,53 +410,104 @@ function validateImerPose(h, ordered, gray, thr, W, H) {
     return sampleLum(gray, W, H, q.x, q.y, r);
   };
 
-  const center = proj(SPEC.circle.center);
-  if (!center || !pointInPoly(center, ordered)) return {ok:false, score:-999};
+  // 1) La feuille A3 projetée doit exister à l'écran et avoir une vraie surface.
+  //    C'est le verrou principal contre les faux positifs dans la moquette.
+  const pagePoly = [[0,0], [SPEC.page[0],0], SPEC.page, [0,SPEC.page[1]]].map(proj);
+  if (pagePoly.some(p => !p)) return {ok:false, score:-999, reason:'page hors champ'};
+  const pageArea = polyArea(pagePoly);
+  if (pageArea < 1800) return {ok:false, score:-999, reason:'feuille trop petite'};
 
-  // Cohérence de forme : les côtés opposés ne doivent pas être absurdes.
   const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
-  const top = d(ordered[0], ordered[1]), right = d(ordered[1], ordered[2]);
-  const bottom = d(ordered[2], ordered[3]), left = d(ordered[3], ordered[0]);
-  if (Math.min(top,right,bottom,left) < 8) return {ok:false, score:-999};
-  if (Math.max(top,bottom) / Math.min(top,bottom) > 3.2) return {ok:false, score:-999};
-  if (Math.max(left,right) / Math.min(left,right) > 3.2) return {ok:false, score:-999};
+  const pwTop = d(pagePoly[0], pagePoly[1]);
+  const pwBot = d(pagePoly[3], pagePoly[2]);
+  const phLeft = d(pagePoly[0], pagePoly[3]);
+  const phRight = d(pagePoly[1], pagePoly[2]);
+  if (Math.min(pwTop,pwBot,phLeft,phRight) < 18) return {ok:false, score:-999, reason:'côtés trop courts'};
+  if (Math.max(pwTop,pwBot) / Math.min(pwTop,pwBot) > 2.15) return {ok:false, score:-999, reason:'haut/bas incohérents'};
+  if (Math.max(phLeft,phRight) / Math.min(phLeft,phRight) > 2.15) return {ok:false, score:-999, reason:'gauche/droite incohérents'};
 
-  // Le centre vide doit être clair, sinon on est probablement sur la moquette.
-  const centerLum = sampleLum(gray, W, H, center.x, center.y, 3);
-  if (centerLum === null || centerLum < Math.max(95, thr + 8)) return {ok:false, score:-999};
+  const center = proj(SPEC.circle.center);
+  if (!center || !pointInPoly(center, pagePoly)) return {ok:false, score:-999, reason:'centre hors feuille'};
 
-  // Disque asymétrique : noir à gauche, blanc/sans disque au miroir droit.
+  // 2) La cible doit être imprimée sur une grande zone blanche.
+  //    On échantillonne des points sûrs de la feuille, loin des traits noirs.
+  const whitePts = [
+    [210,18], [210,279], [20,148], [400,148], [210,148.5],
+    [145,148], [275,148], [145,90], [275,90], [145,207], [275,207],
+    [85,80], [335,80], [85,225], [335,225], [210,60], [210,237]
+  ];
+  const whiteVals = whitePts.map(p => lum(p, 3)).filter(v => v !== null);
+  if (whiteVals.length < 12) return {ok:false, score:-999, reason:'feuille incomplète'};
+  const avgWhite = whiteVals.reduce((a,b)=>a+b,0) / whiteVals.length;
+  const whiteLimit = Math.max(158, thr + 34);
+  const whiteOk = whiteVals.filter(v => v > whiteLimit).length;
+  if (avgWhite < whiteLimit || whiteOk < Math.ceil(whiteVals.length * 0.68)) {
+    return {ok:false, score:-999, reason:'pas de feuille blanche'};
+  }
+
+  // 3) Validation stricte des 4 coins : noir / blanc / noir / blanc.
+  //    Sans cette signature, aucun IMER ✓, même si 4 points forment un quadrilatère.
+  const cornerPts = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
+  let cornerScore = 0;
+  let cornerOk = 0;
+  for (const c of cornerPts) {
+    const q0 = lum(c, 2); // coeur noir
+    const midOffsets = [[5,0],[-5,0],[0,5],[0,-5]];     // anneau blanc
+    const outerOffsets = [[10,0],[-10,0],[0,10],[0,-10]]; // anneau noir
+    const bgOffsets = [[16,0],[-16,0],[0,16],[0,-16]];  // papier blanc hors cible
+    const mids = midOffsets.map(o => lum([c[0]+o[0], c[1]+o[1]], 1)).filter(v=>v!==null);
+    const outers = outerOffsets.map(o => lum([c[0]+o[0], c[1]+o[1]], 1)).filter(v=>v!==null);
+    const bgs = bgOffsets.map(o => lum([c[0]+o[0], c[1]+o[1]], 1)).filter(v=>v!==null);
+    if (q0 === null || mids.length < 3 || outers.length < 3 || bgs.length < 3) continue;
+    const avgMid = mids.reduce((a,b)=>a+b,0)/mids.length;
+    const avgOuter = outers.reduce((a,b)=>a+b,0)/outers.length;
+    const avgBg = bgs.reduce((a,b)=>a+b,0)/bgs.length;
+
+    const darkCore = avgWhite - q0;
+    const whiteMid = avgMid - q0;
+    const darkOuter = avgBg - avgOuter;
+    const bgWhite = avgBg > whiteLimit - 8;
+
+    if (darkCore > 45 && whiteMid > 35 && darkOuter > 28 && bgWhite) {
+      cornerOk++;
+      cornerScore += darkCore + whiteMid + darkOuter;
+    }
+  }
+  if (cornerOk < 4) return {ok:false, score:-999, reason:'coins non confirmés'};
+
+  // 4) Disque asymétrique : noir à gauche, pas de disque au miroir droit.
   const discLum = lum(SPEC.asym_disc.center, 2);
   const mirrorLum = lum([SPEC.page[0]-SPEC.asym_disc.center[0], SPEC.asym_disc.center[1]], 2);
-  if (discLum === null || mirrorLum === null) return {ok:false, score:-999};
+  if (discLum === null || mirrorLum === null) return {ok:false, score:-999, reason:'asym hors champ'};
   const asym = mirrorLum - discLum;
-  if (asym < 10) return {ok:false, score:-999};
+  if (avgWhite - discLum < 38 || asym < 22) {
+    return {ok:false, score:-999, reason:'asymétrie non confirmée'};
+  }
 
-  // Validation avec des éléments internes IMER : colonnes noires et zones blanches.
+  // 5) Éléments internes : colonnes, barres et arcs doivent être sombres par contraste avec le papier.
   const blackChecks = [
     [60,130], [60,170], [360,130], [360,170],
-    [100,52], [320,52], [100,245], [320,245]
+    [100,52], [320,52], [100,245], [320,245],
+    [122,120], [298,177]
   ];
-  const whiteChecks = [
-    SPEC.circle.center, [210,112], [210,185], [210,148.5]
-  ];
-
-  let score = asym + (centerLum - thr);
   let blackOk = 0;
+  let blackScore = 0;
   for (const p of blackChecks) {
     const v = lum(p, 2);
-    if (v !== null && v < thr + 12) { score += (thr + 12 - v); blackOk++; }
+    if (v !== null && avgWhite - v > 34) { blackOk++; blackScore += avgWhite - v; }
   }
-  let whiteOk = 0;
-  for (const p of whiteChecks) {
-    const v = lum(p, 2);
-    if (v !== null && v > thr + 8) { score += (v - thr); whiteOk++; }
-  }
-  if (blackOk < 4 || whiteOk < 2) return {ok:false, score:-999};
+  if (blackOk < 6) return {ok:false, score:-999, reason:'motifs internes non confirmés'};
 
-  return {ok:true, score};
+  // 6) Garde-fou distance : une cible A3 vue dans l'image ne peut pas donner 10 cm.
+  //    On ne calcule pas ici la distance caméra, mais on évite les homographies dégénérées.
+  const markerArea = polyArea(ordered);
+  if (markerArea < pageArea * 0.28 || markerArea > pageArea * 0.88) {
+    return {ok:false, score:-999, reason:'échelle marqueurs incohérente'};
+  }
+
+  const score = Math.round((avgWhite - whiteLimit) * 2 + cornerScore + blackScore + asym + pageArea / 80);
+  return {ok:true, score, reason:'ok'};
 }
-
 function pointInPoly(p, poly) {
   let inside = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
