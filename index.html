@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<title>IMER Live V5.2 · Dual IMER · RS BAT</title>
+<title>IMER Live V5.3 · Dual IMER · RS BAT</title>
 <style>
   html,body{margin:0;height:100%;background:#000;font-family:-apple-system,Segoe UI,Arial,sans-serif;overflow:hidden}
   #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
@@ -68,7 +68,7 @@ const anchorMode = document.getElementById('anchorMode');
 const stabMode = document.getElementById('stabMode');
 const work = document.createElement('canvas');
 const wctx = work.getContext('2d', {willReadFrequently:true});
-const WW = 480;              // largeur de travail (détection)
+const WW = 720;              // largeur de travail (détection) — V5.3: meilleur rappel pour 2 IMER éloignés
 let smooth = null;           // coins lissés
 let lostCount = 99;
 let upSign = 0;              // conservé pour compat ancienne, plus critique en V4
@@ -88,7 +88,7 @@ const TRACK_MAX_AGE = 90;    // frames : au-delà, on considère la prédiction 
 const MAX_FRAME_JUMP = 95;   // px travail : au-delà, nouvelle pose suspecte sauf score très fort
 const STAB_FRAMES = {off:0, low:8, med:20, high:45};
 
-// ================= PATCH V5.2 — mode 2 IMER =================
+// ================= PATCH V5.3 — mode 2 IMER multi-cibles =================
 // Deux feuilles identiques peuvent être utilisées comme deux ancres.
 // Prototype : on différencie A/B par la position image (centre le plus à gauche = A).
 let dualLast = null;
@@ -150,7 +150,7 @@ function crossCheck(bin, W, H, cx, cy) {
 
 function findBullseyes(bin, W, H) {
   const cands = [];
-  for (let y = 1; y < H-1; y += 2) {
+  for (let y = 1; y < H-1; y += 1) {
     let runs = [], vals = [], x = 0;
     let cur = bin[y*W], len = 1;
     for (x = 1; x < W; x++) {
@@ -182,7 +182,7 @@ function findBullseyes(bin, W, H) {
     if (cl) { cl.x = (cl.x*cl.n + c.x)/(cl.n+1); cl.y = (cl.y*cl.n + c.y)/(cl.n+1); cl.size = (cl.size*cl.n + c.size)/(cl.n+1); cl.n++; }
     else clusters.push({x:c.x, y:c.y, size:c.size, n:1});
   });
-  return clusters.filter(c => c.n >= 2).sort((a,b) => b.n - a.n).slice(0, 8);
+  return clusters.filter(c => c.n >= 1).sort((a,b) => b.n - a.n).slice(0, 32);
 }
 
 
@@ -223,11 +223,11 @@ function findSquareMarkers(bin, gray, W, H, thr) {
       }
 
       const bw = maxX - minX + 1, bh = maxY - minY + 1;
-      if (count < 14 || bw < 7 || bh < 7 || bw > 42 || bh > 42) continue;
+      if (count < 8 || bw < 5 || bh < 5 || bw > 70 || bh > 70) continue;
       const ar = bw / bh;
-      if (ar < 0.55 || ar > 1.85) continue;
+      if (ar < 0.38 || ar > 2.65) continue;
       const fill = count / (bw * bh);
-      if (fill < 0.18 || fill > 0.78) continue; // anneau carré, pas barre longue ni gros disque
+      if (fill < 0.12 || fill > 0.86) continue; // anneau carré, pas barre longue ni gros disque
 
       const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
       const r = Math.max(3, Math.min(bw, bh) / 2);
@@ -240,12 +240,12 @@ function findSquareMarkers(bin, gray, W, H, thr) {
       const coreDark = w1 - c0;
       const edgeDark = bg - e1;
       const ringWhite = w1 - e1;
-      if (coreDark < 18 || edgeDark < 18 || ringWhite < 8 || bg < darkLimit) continue;
+      if (coreDark < 12 || edgeDark < 12 || ringWhite < 5 || bg < darkLimit - 12) continue;
 
       out.push({x:cx, y:cy, size:(bw+bh)/2, n:5, conf:coreDark + edgeDark + ringWhite + count/3});
     }
   }
-  return out.sort((a,b)=>b.conf-a.conf).slice(0, 12);
+  return out.sort((a,b)=>b.conf-a.conf).slice(0, 32);
 }
 
 function avgSamples(gray, W, H, pts, r=1) {
@@ -485,7 +485,7 @@ function drawLastMarkersFromCorners(toScr, corners, dashed, conf) {
 
 function detectImerPosesFromClusters(clusters, gray, thr) {
   const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
-  const pts = clusters.slice(0, 12);
+  const pts = clusters.slice(0, anchorMode.value === 'between' ? 24 : 8);
   const poses = [];
   const combos = kCombos(pts, 4);
 
@@ -493,7 +493,7 @@ function detectImerPosesFromClusters(clusters, gray, thr) {
     const hull = orderHull(c);
     if (hull.length !== 4) return;
     const area = polyArea(hull);
-    if (area < 500) return;
+    if (area < (anchorMode.value === 'between' ? 120 : 500)) return;
 
     for (let rev = 0; rev < 2; rev++) {
       const seq = rev ? hull.slice().reverse() : hull;
@@ -622,7 +622,7 @@ function loop() {
   const squareCands = findSquareMarkers(bin, gray, WW, WH, thr);
   const clusters = mergeCandidates(ratioCands, squareCands)
     .sort((a,b) => (b.conf||0) - (a.conf||0))
-    .slice(0, 12);
+    .slice(0, 24);
 
   overlay.width = window.innerWidth * (window.devicePixelRatio||1);
   overlay.height = window.innerHeight * (window.devicePixelRatio||1);
@@ -657,6 +657,10 @@ function loop() {
       drawWallBetweenDual(dual, toScr, !!age);
       return;
     }
+    badge.textContent = 'Recherche 2 IMER… (' + poses.length + '/2 cibles · ' + clusters.length + ' coins)';
+    badge.classList.remove('ok');
+    badge.classList.add('warn');
+    foot.textContent = 'Mode 2 IMER V5.3 : éloigne-toi assez pour voir les 2 feuilles entières. Une feuille seule ne suffit pas.';
   }
 
   const bestH = poses[0] || null;
@@ -887,14 +891,14 @@ function validateImerPose(h, ordered, gray, thr, W, H) {
   const pagePoly = [[0,0], [SPEC.page[0],0], SPEC.page, [0,SPEC.page[1]]].map(proj);
   if (pagePoly.some(p => !p)) return {ok:false, score:-999, reason:'page hors champ'};
   const pageArea = polyArea(pagePoly);
-  if (pageArea < 1800) return {ok:false, score:-999, reason:'feuille trop petite'};
+  if (pageArea < (anchorMode.value === 'between' ? 520 : 1200)) return {ok:false, score:-999, reason:'feuille trop petite'};
 
   const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
   const pwTop = d(pagePoly[0], pagePoly[1]);
   const pwBot = d(pagePoly[3], pagePoly[2]);
   const phLeft = d(pagePoly[0], pagePoly[3]);
   const phRight = d(pagePoly[1], pagePoly[2]);
-  if (Math.min(pwTop,pwBot,phLeft,phRight) < 18) return {ok:false, score:-999, reason:'côtés trop courts'};
+  if (Math.min(pwTop,pwBot,phLeft,phRight) < (anchorMode.value === 'between' ? 8 : 14)) return {ok:false, score:-999, reason:'côtés trop courts'};
   if (Math.max(pwTop,pwBot) / Math.min(pwTop,pwBot) > 3.80) return {ok:false, score:-999, reason:'haut/bas incohérents'};
   if (Math.max(phLeft,phRight) / Math.min(phLeft,phRight) > 3.80) return {ok:false, score:-999, reason:'gauche/droite incohérents'};
 
@@ -909,11 +913,11 @@ function validateImerPose(h, ordered, gray, thr, W, H) {
     [85,80], [335,80], [85,225], [335,225], [210,60], [210,237]
   ];
   const whiteVals = whitePts.map(p => lum(p, 3)).filter(v => v !== null);
-  if (whiteVals.length < 12) return {ok:false, score:-999, reason:'feuille incomplète'};
+  if (whiteVals.length < (anchorMode.value === 'between' ? 8 : 12)) return {ok:false, score:-999, reason:'feuille incomplète'};
   const avgWhite = whiteVals.reduce((a,b)=>a+b,0) / whiteVals.length;
   const whiteLimit = Math.max(158, thr + 34);
   const whiteOk = whiteVals.filter(v => v > whiteLimit).length;
-  if (avgWhite < whiteLimit || whiteOk < Math.ceil(whiteVals.length * 0.68)) {
+  if (avgWhite < whiteLimit - (anchorMode.value === 'between' ? 18 : 0) || whiteOk < Math.ceil(whiteVals.length * (anchorMode.value === 'between' ? 0.45 : 0.68))) {
     return {ok:false, score:-999, reason:'pas de feuille blanche'};
   }
 
@@ -940,19 +944,19 @@ function validateImerPose(h, ordered, gray, thr, W, H) {
     const darkOuter = avgBg - avgOuter;
     const bgWhite = avgBg > whiteLimit - 8;
 
-    if (darkCore > 45 && whiteMid > 35 && darkOuter > 28 && bgWhite) {
+    if (darkCore > (anchorMode.value === 'between' ? 24 : 45) && whiteMid > (anchorMode.value === 'between' ? 18 : 35) && darkOuter > (anchorMode.value === 'between' ? 14 : 28) && (bgWhite || anchorMode.value === 'between')) {
       cornerOk++;
       cornerScore += darkCore + whiteMid + darkOuter;
     }
   }
-  if (cornerOk < 3) return {ok:false, score:-999, reason:'coins non confirmés'};
+  if (cornerOk < (anchorMode.value === 'between' ? 2 : 3)) return {ok:false, score:-999, reason:'coins non confirmés'};
 
   // 4) Disque asymétrique : noir à gauche, pas de disque au miroir droit.
   const discLum = lum(SPEC.asym_disc.center, 2);
   const mirrorLum = lum([SPEC.page[0]-SPEC.asym_disc.center[0], SPEC.asym_disc.center[1]], 2);
   if (discLum === null || mirrorLum === null) return {ok:false, score:-999, reason:'asym hors champ'};
   const asym = mirrorLum - discLum;
-  if (avgWhite - discLum < 38 || asym < 22) {
+  if (avgWhite - discLum < (anchorMode.value === 'between' ? 22 : 38) || asym < (anchorMode.value === 'between' ? 10 : 22)) {
     return {ok:false, score:-999, reason:'asymétrie non confirmée'};
   }
 
@@ -966,14 +970,14 @@ function validateImerPose(h, ordered, gray, thr, W, H) {
   let blackScore = 0;
   for (const p of blackChecks) {
     const v = lum(p, 2);
-    if (v !== null && avgWhite - v > 34) { blackOk++; blackScore += avgWhite - v; }
+    if (v !== null && avgWhite - v > (anchorMode.value === 'between' ? 20 : 34)) { blackOk++; blackScore += avgWhite - v; }
   }
-  if (blackOk < 6) return {ok:false, score:-999, reason:'motifs internes non confirmés'};
+  if (blackOk < (anchorMode.value === 'between' ? 3 : 6)) return {ok:false, score:-999, reason:'motifs internes non confirmés'};
 
   // 6) Garde-fou distance : une cible A3 vue dans l'image ne peut pas donner 10 cm.
   //    On ne calcule pas ici la distance caméra, mais on évite les homographies dégénérées.
   const markerArea = polyArea(ordered);
-  if (markerArea < pageArea * 0.28 || markerArea > pageArea * 0.88) {
+  if (markerArea < pageArea * (anchorMode.value === 'between' ? 0.12 : 0.28) || markerArea > pageArea * (anchorMode.value === 'between' ? 0.98 : 0.88)) {
     return {ok:false, score:-999, reason:'échelle marqueurs incohérente'};
   }
 
