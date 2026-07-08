@@ -21,6 +21,1105 @@
   .tools{position:fixed;left:10px;right:10px;bottom:58px;z-index:11;display:flex;gap:8px;align-items:center;justify-content:center;pointer-events:auto}
   .tools label{background:rgba(255,255,255,.92);border-radius:999px;padding:6px 9px;font-size:12px;font-weight:800;color:#1f2328;box-shadow:0 2px 10px rgba(0,0,0,.15)}
   .tools select{border:0;background:#f3f4f6;border-radius:999px;padding:6px 8px;font-weight:800;color:#111827;max-width:132px}
+  #debugPanel{position:fixed;left:10px;right:10px;top:84px;z-index:12;background:rgba(0,0,0,.68);color:#e5e7eb;border-radius:10px;padding:8px 10px;font:11px/1.35 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;white-space:pre-wrap;max-height:32vh;overflow:auto;pointer-events:none}
+  #debugPanel b{color:#fff} #debugPanel .bad{color:#fca5a5} #debugPanel .ok{color:#86efac} #debugPanel .warn{color:#fde68a}
+</style>
+</head>
+<body>
+<video id="video" playsinline muted autoplay></video>
+<canvas id="overlay"></canvas>
+<div class="hud"><b>IMER Live</b> <span>Mur 2 IMER</span><span class="badge" id="badge">Recherche…</span></div>
+<button id="startBtn">Démarrer la caméra</button>
+<div class="tools">
+  <label>Pose <select id="anchorMode">
+    <option value="left" selected>Coin gauche</option>
+    <option value="center">Milieu</option>
+    <option value="right">Coin droit</option>
+    <option value="front">Devant feuille</option>
+    <option value="between">Entre 2 IMER</option>
+  </select></label>
+  <label>Stab <select id="stabMode">
+    <option value="off">Off</option>
+    <option value="low">Faible</option>
+    <option value="med" selected>Moyenne</option>
+    <option value="high">Forte</option>
+  </select></label>
+</div>
+<div class="foot" id="foot">Vise les cibles IMER A3. Mode haute résolution 960px activé.</div>
+
+<script>
+(() => {
+'use strict';
+/* ================= SPEC IMER (mm) — doit correspondre à imer-spec.json ================= */
+const SPEC = {
+  corners: {TL:[40,40], TR:[380,40], BR:[380,257], BL:[40,257]},
+  bullseye: {outer:24, mid:14, core:6.5},
+  circle: {center:[210,148.5], radius:90},
+  asym_disc: {center:[60,214], r:8},
+  page: [420,297]
+};
+/* Mur affiché : 2 m de long, 2 m de haut, 18 cm d'épaisseur, centré sur la cible */
+const WALL = {len:2000, height:2000, th:180};
+
+const video = document.getElementById('video');
+const overlay = document.getElementById('overlay');
+const octx = overlay.getContext('2d');
+const badge = document.getElementById('badge');
+const foot = document.getElementById('foot');
+const debugPanel = document.getElementById('debugPanel');
+const anchorMode = document.getElementById('anchorMode');
+const stabMode = document.getElementById('stabMode');
+const work = document.createElement('canvas');
+const wctx = work.getContext('2d', {willReadFrequently:true});
+const WW = 720;              // largeur de travail (détection) — V5.5 robuste iPhone Pro
+let smooth = null;           // coins lissés
+let lostCount = 99;
+let upSign = 0;              // conservé pour compat ancienne, plus critique en V4
+let fps = 0, frames = 0, lastFpsT = performance.now();
+let frameId = 0;
+let lastRender = null;       // dernière homographie valide pour stabilisation
+
+// ================= IMER V5 — suivi prédictif / anti-téléportation =================
+// Au lieu de jeter la pose dès qu'un coin disparaît, on conserve un état dynamique
+// pour chacun des 4 coins : position, vitesse, âge et confiance.
+let cornerTrackers = null;   // [{x,y,vx,vy,age,conf,seen}] dans l'ordre TL,TR,BR,BL
+let poseHistory = [];        // mémoire courte des poses/homographies validées
+let stableSmooth = null;     // coins finaux utilisés pour le rendu, après filtre anti-saut
+let lastAcceptedScore = 0;
+const HISTORY_MAX = 60;
+const TRACK_MAX_AGE = 90;    // frames : au-delà, on considère la prédiction trop vieille
+const MAX_FRAME_JUMP = 95;   // px travail : au-delà, nouvelle pose suspecte sauf score très fort
+const STAB_FRAMES = {off:0, low:8, med:20, high:45};
+
+// ================= PATCH V5.3 — mode 2 IMER multi-cibles =================
+// Deux feuilles identiques peuvent être utilisées comme deux ancres.
+// Prototype : on différencie A/B par la position image (centre le plus à gauche = A).
+let dualLast = null;
+const DUAL_MAX_AGE = 50;
+
+// ================= PATCH V5.6 — debug métriques =================
+let lastRejectStats = {};
+let lastComboStats = {combos:0, hull:0, area:0, h:0, validated:0};
+let lastDebug = null;
+
+
+document.getElementById('startBtn').addEventListener('click', async () => {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio: false
+    });
+    video.srcObject = stream;
+    await video.play();
+    document.getElementById('startBtn').style.display = 'none';
+    requestAnimationFrame(loop);
+  } catch (e) {
+    foot.textContent = 'Caméra refusée : ' + e.message + ' — vérifie les autorisations Safari/Chrome et le HTTPS.';
+  }
+});
+
+/* ================= Détection des coins (balayage de ratios, style QR finder) =================
+   Cible imbriquée 24/14/6.5 mm -> le long d'une ligne passant par le centre :
+   noir 5 · blanc 3.75 · noir 6.5 · blanc 3.75 · noir 5  (total 24) */
+const RATIOS = [5, 3.75, 6.5, 3.75, 5];
+const RTOT = RATIOS.reduce((a,b)=>a+b,0);
+
+function checkRatios(runs) {
+  const tot = runs.reduce((a,b)=>a+b,0);
+  if (tot < 8) return false;
+  for (let i = 0; i < 5; i++) {
+    const exp = RATIOS[i]/RTOT*tot;
+    if (Math.abs(runs[i]-exp) > Math.max(1.6, exp*0.5)) return false;
+  }
+  return true;
+}
+
+function crossCheck(bin, W, H, cx, cy) {
+  // vérifie le motif verticalement à la colonne cx, renvoie le centre vertical raffiné ou null
+  const want = [1,0,1,0,1]; // noir blanc noir blanc noir
+  const runs = [0,0,0,0,0];
+
+  let y = cy;
+  while (y >= 0 && bin[y*W+cx] === 1) { runs[2]++; y--; }
+  for (let k = 1; k >= 0; k--) {
+    while (y >= 0 && bin[y*W+cx] === want[k]) { runs[k]++; y--; }
+  }
+  const yTop = y;
+
+  y = cy + 1;
+  while (y < H && bin[y*W+cx] === 1) { runs[2]++; y++; }
+  for (let k = 3; k <= 4; k++) {
+    while (y < H && bin[y*W+cx] === want[k]) { runs[k]++; y++; }
+  }
+
+  if (!checkRatios(runs)) return null;
+  const tot = runs.reduce((a,b)=>a+b,0);
+  return yTop + tot/2;
+}
+
+function findBullseyes(bin, W, H) {
+  const cands = [];
+  for (let y = 1; y < H-1; y += 1) {
+    let runs = [], vals = [], x = 0;
+    let cur = bin[y*W], len = 1;
+    for (x = 1; x < W; x++) {
+      const v = bin[y*W+x];
+      if (v === cur) len++;
+      else {
+        runs.push(len); vals.push(cur);
+        cur = v; len = 1;
+        const n = runs.length;
+        if (n >= 5) {
+          const v5 = vals.slice(n-5);
+          if (v5[0]===1 && v5[1]===0 && v5[2]===1 && v5[3]===0 && v5[4]===1) {
+            const w5 = runs.slice(n-5);
+            if (checkRatios(w5)) {
+              const tot = w5.reduce((a,b)=>a+b,0);
+              const cxx = Math.round(x - len - (w5[4] + w5[3] + w5[2]/2));
+              const cyR = crossCheck(bin, W, H, Math.max(0, Math.min(W-1, cxx)), y);
+              if (cyR !== null) cands.push({x:cxx, y:cyR, size:tot});
+            }
+          }
+        }
+      }
+    }
+  }
+  // clustering
+  const clusters = [];
+  cands.forEach(c => {
+    const cl = clusters.find(k => Math.abs(k.x-c.x) < c.size*0.7 && Math.abs(k.y-c.y) < c.size*0.7);
+    if (cl) { cl.x = (cl.x*cl.n + c.x)/(cl.n+1); cl.y = (cl.y*cl.n + c.y)/(cl.n+1); cl.size = (cl.size*cl.n + c.size)/(cl.n+1); cl.n++; }
+    else clusters.push({x:c.x, y:c.y, size:c.size, n:1});
+  });
+  return clusters.filter(c => c.n >= 1).sort((a,b) => b.n - a.n).slice(0, 32);
+}
+
+
+/* ================= Détection carrés IMER par composants connexes =================
+   Cette voie est volontairement plus simple que le balayage QR : elle cherche les
+   petits carrés imbriqués noirs des 4 coins, même quand la cible est inclinée/floue. */
+function findSquareMarkers(bin, gray, W, H, thr) {
+  const seen = new Uint8Array(W*H);
+  const out = [];
+  const qx = new Int32Array(W*H > 90000 ? 90000 : W*H);
+  const qy = new Int32Array(qx.length);
+  const maxQ = qx.length;
+  const darkLimit = 55; // V5.5: seuil fixe, évite que la feuille claire bloque les coins
+
+  for (let y = 1; y < H-1; y++) {
+    for (let x = 1; x < W-1; x++) {
+      const idx0 = y*W + x;
+      if (seen[idx0] || !bin[idx0]) continue;
+
+      let head = 0, tail = 0;
+      let minX = x, maxX = x, minY = y, maxY = y, count = 0;
+      seen[idx0] = 1; qx[tail] = x; qy[tail] = y; tail++;
+
+      while (head < tail && head < maxQ) {
+        const cx = qx[head], cy = qy[head]; head++; count++;
+        if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+        const nb = [[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]];
+        for (let k = 0; k < 4; k++) {
+          const nx = nb[k][0], ny = nb[k][1];
+          if (nx <= 0 || ny <= 0 || nx >= W-1 || ny >= H-1) continue;
+          const ii = ny*W + nx;
+          if (!seen[ii] && bin[ii]) {
+            seen[ii] = 1;
+            if (tail < maxQ) { qx[tail] = nx; qy[tail] = ny; tail++; }
+          }
+        }
+      }
+
+      const bw = maxX - minX + 1, bh = maxY - minY + 1;
+      if (count < 6 || bw < 4 || bh < 4 || bw > 110 || bh > 110) continue;
+      const ar = bw / bh;
+      if (ar < 0.38 || ar > 2.65) continue;
+      const fill = count / (bw * bh);
+      if (fill < 0.12 || fill > 0.86) continue; // anneau carré, pas barre longue ni gros disque
+
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const r = Math.max(3, Math.min(bw, bh) / 2);
+      const c0 = sampleLum(gray, W, H, cx, cy, 1);                 // coeur noir
+      const w1 = avgSamples(gray, W, H, [[cx+r*0.38,cy],[cx-r*0.38,cy],[cx,cy+r*0.38],[cx,cy-r*0.38]], 1); // anneau blanc
+      const e1 = avgSamples(gray, W, H, [[cx+r*0.78,cy],[cx-r*0.78,cy],[cx,cy+r*0.78],[cx,cy-r*0.78]], 1); // bord noir
+      const bg = avgSamples(gray, W, H, [[cx+r*1.25,cy],[cx-r*1.25,cy],[cx,cy+r*1.25],[cx,cy-r*1.25]], 1); // papier blanc
+      if (c0 === null || w1 === null || e1 === null || bg === null) continue;
+
+      const coreDark = w1 - c0;
+      const edgeDark = bg - e1;
+      const ringWhite = w1 - e1;
+      if (coreDark < 8 || edgeDark < 8 || ringWhite < 3 || bg < darkLimit) continue;
+
+      out.push({x:cx, y:cy, size:(bw+bh)/2, n:5, conf:coreDark + edgeDark + ringWhite + count/3});
+    }
+  }
+  return out.sort((a,b)=>b.conf-a.conf).slice(0, 32);
+}
+
+function avgSamples(gray, W, H, pts, r=1) {
+  const vals = [];
+  for (const p of pts) {
+    const v = sampleLum(gray, W, H, p[0], p[1], r);
+    if (v !== null) vals.push(v);
+  }
+  if (vals.length < Math.ceil(pts.length * 0.75)) return null;
+  return vals.reduce((a,b)=>a+b,0) / vals.length;
+}
+
+function mergeCandidates(a, b) {
+  const out = [];
+  for (const c of a.concat(b)) {
+    const near = out.find(o => Math.hypot(o.x-c.x, o.y-c.y) < Math.max(8, Math.min(o.size||12, c.size||12) * 0.75));
+    if (near) {
+      const w1 = near.conf || near.n || 1, w2 = c.conf || c.n || 1;
+      near.x = (near.x*w1 + c.x*w2) / (w1+w2);
+      near.y = (near.y*w1 + c.y*w2) / (w1+w2);
+      near.size = ((near.size||0)*w1 + (c.size||0)*w2) / (w1+w2);
+      near.n = Math.max(near.n||1, c.n||1);
+      near.conf = Math.max(near.conf||0, c.conf||0) + 6;
+    } else {
+      out.push(Object.assign({conf: c.conf || c.n || 1}, c));
+    }
+  }
+  return out;
+}
+
+/* ================= Homographie 4 points (DLT + Gauss) ================= */
+function homography(src, dst) {
+  const A = [];
+  for (let i = 0; i < 4; i++) {
+    const [x,y] = src[i], [u,v] = dst[i];
+    A.push([x,y,1,0,0,0,-u*x,-u*y,u]);
+    A.push([0,0,0,x,y,1,-v*x,-v*y,v]);
+  }
+  // résoudre A[.,0..7] h = A[.,8]
+  const M = A.map(r => r.slice(0,8).concat([r[8]]));
+  for (let c = 0; c < 8; c++) {
+    let p = c;
+    for (let r = c+1; r < 8; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-9) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = M[r][c]/M[c][c];
+      for (let k = c; k <= 8; k++) M[r][k] -= f*M[c][k];
+    }
+  }
+  const h = [];
+  for (let i = 0; i < 8; i++) h.push(M[i][8]/M[i][i]);
+  h.push(1);
+  return h; // h[0..8], mappe src->dst
+}
+function applyH(h, x, y) {
+  const w = h[6]*x + h[7]*y + h[8];
+  return [(h[0]*x + h[1]*y + h[2])/w, (h[3]*x + h[4]*y + h[5])/w];
+}
+
+/* ================= Pose depuis l'homographie (K estimé) ================= */
+function poseFromH(h, W, H) {
+  const f = 0.95*Math.max(W,H), cx = W/2, cy = H/2;
+  // M = K^-1 * H
+  const m = [
+    (h[0]-cx*h[6])/f, (h[1]-cx*h[7])/f, (h[2]-cx*h[8])/f,
+    (h[3]-cy*h[6])/f, (h[4]-cy*h[7])/f, (h[5]-cy*h[8])/f,
+    h[6], h[7], h[8]
+  ];
+  const n1 = Math.hypot(m[0], m[3], m[6]);
+  const n2 = Math.hypot(m[1], m[4], m[7]);
+  const s = 2/(n1+n2);
+  let r1 = [m[0]*s, m[3]*s, m[6]*s];
+  let r2 = [m[1]*s, m[4]*s, m[7]*s];
+  let t  = [m[2]*s, m[5]*s, m[8]*s];
+  if (t[2] < 0) { r1 = r1.map(v=>-v); r2 = r2.map(v=>-v); t = t.map(v=>-v); }
+  let r3 = [r1[1]*r2[2]-r1[2]*r2[1], r1[2]*r2[0]-r1[0]*r2[2], r1[0]*r2[1]-r1[1]*r2[0]];
+  // ré-orthogonaliser r2
+  r2 = [r3[1]*r1[2]-r3[2]*r1[1], r3[2]*r1[0]-r3[0]*r1[2], r3[0]*r1[1]-r3[1]*r1[0]];
+  const norm = v => { const n = Math.hypot(v[0],v[1],v[2])||1; return [v[0]/n, v[1]/n, v[2]/n]; };
+  r1 = norm(r1); r2 = norm(r2); r3 = norm(r3);
+  return {R:[r1,r2,r3], t, f, cx, cy};
+}
+function projectPt(pose, X, Y, Z) {
+  const {R, t, f, cx, cy} = pose;
+  const x = R[0][0]*X + R[1][0]*Y + R[2][0]*Z + t[0];
+  const y = R[0][1]*X + R[1][1]*Y + R[2][1]*Z + t[1];
+  const z = R[0][2]*X + R[1][2]*Y + R[2][2]*Z + t[2];
+  if (z <= 1) return null;
+  return {x: cx + f*x/z, y: cy + f*y/z, z};
+}
+
+
+
+/* ================= IMER V5 — moteur de suivi prédictif ================= */
+function cloneCorners(corners) { return corners.map(p => [p[0], p[1]]); }
+function avgCornerJump(a, b) {
+  if (!a || !b || a.length !== 4 || b.length !== 4) return 9999;
+  let s = 0;
+  for (let i = 0; i < 4; i++) s += Math.hypot(a[i][0]-b[i][0], a[i][1]-b[i][1]);
+  return s / 4;
+}
+function pushPoseHistory(h, corners, score) {
+  poseHistory.push({frame: frameId, h: h.slice(), corners: cloneCorners(corners), score});
+  if (poseHistory.length > HISTORY_MAX) poseHistory.shift();
+}
+function initOrUpdateTrackers(corners, score) {
+  if (!cornerTrackers) {
+    cornerTrackers = corners.map(p => ({x:p[0], y:p[1], vx:0, vy:0, age:0, conf:1, seen:true}));
+    return;
+  }
+  for (let i = 0; i < 4; i++) {
+    const t = cornerTrackers[i];
+    const nx = corners[i][0], ny = corners[i][1];
+    // vitesse amortie : évite les accélérations impossibles dues aux faux positifs
+    const nvx = clamp(nx - t.x, -35, 35);
+    const nvy = clamp(ny - t.y, -35, 35);
+    t.vx = t.vx * 0.55 + nvx * 0.45;
+    t.vy = t.vy * 0.55 + nvy * 0.45;
+    t.x = nx; t.y = ny; t.age = 0; t.conf = Math.min(1, 0.65 + score/4500); t.seen = true;
+  }
+}
+function predictCorners() {
+  if (!cornerTrackers) return null;
+  return cornerTrackers.map(t => {
+    const ageBoost = Math.min(t.age + 1, 10);
+    return [t.x + t.vx * ageBoost * 0.35, t.y + t.vy * ageBoost * 0.35];
+  });
+}
+function ageTrackers() {
+  if (!cornerTrackers) return;
+  cornerTrackers.forEach(t => { t.age++; t.conf *= 0.965; t.seen = false; });
+}
+function updateTrackersWithCandidates(clusters) {
+  // Suivi local : si un coin était ici à l'image précédente, on cherche d'abord autour de lui.
+  // Cela évite le mode brutal 4 coins -> 0 coin.
+  if (!cornerTrackers || !clusters || !clusters.length) return 0;
+  let matched = 0;
+  const used = new Set();
+  const preds = predictCorners();
+  for (let i = 0; i < 4; i++) {
+    const t = cornerTrackers[i];
+    if (t.age > TRACK_MAX_AGE) continue;
+    let best = null, bestD = 1e9, bestIdx = -1;
+    for (let j = 0; j < clusters.length; j++) {
+      if (used.has(j)) continue;
+      const c = clusters[j];
+      const d = Math.hypot(c.x - preds[i][0], c.y - preds[i][1]);
+      const gate = clamp(28 + t.age * 4 + (c.size||10) * 1.3, 35, 145);
+      if (d < gate && d < bestD) { best = c; bestD = d; bestIdx = j; }
+    }
+    if (best) {
+      used.add(bestIdx); matched++;
+      const nx = best.x, ny = best.y;
+      t.vx = t.vx * 0.65 + clamp(nx - t.x, -28, 28) * 0.35;
+      t.vy = t.vy * 0.65 + clamp(ny - t.y, -28, 28) * 0.35;
+      t.x = t.x * 0.35 + nx * 0.65;
+      t.y = t.y * 0.35 + ny * 0.65;
+      t.age = 0; t.conf = Math.min(1, t.conf + 0.22); t.seen = true;
+    }
+  }
+  return matched;
+}
+function trackedCornersConfidence() {
+  if (!cornerTrackers) return 0;
+  let conf = 0;
+  for (const t of cornerTrackers) {
+    const agePenalty = Math.max(0, 1 - t.age / TRACK_MAX_AGE);
+    conf += t.conf * agePenalty;
+  }
+  return conf / 4;
+}
+function getTrackedCorners() {
+  if (!cornerTrackers) return null;
+  const conf = trackedCornersConfidence();
+  if (conf < 0.22) return null;
+  const pts = cornerTrackers.map(t => [t.x + t.vx * Math.min(t.age, 6) * 0.25, t.y + t.vy * Math.min(t.age, 6) * 0.25]);
+  // garde-fou : le quadrilatère doit rester plausible
+  const area = polyArea(pts.map(p => ({x:p[0], y:p[1]})));
+  if (area < 350) return null;
+  return {corners: pts, conf};
+}
+function filterAcceptedCorners(cur, score) {
+  // Filtre équivalent Kalman simplifié : prédiction + mesure + rejet des accélérations impossibles.
+  if (!stableSmooth) {
+    stableSmooth = cloneCorners(cur);
+    return cloneCorners(cur);
+  }
+  const jump = avgCornerJump(cur, stableSmooth);
+  const strong = score > Math.max(1800, lastAcceptedScore * 0.82);
+  let alpha = 0.42;
+  if (jump > MAX_FRAME_JUMP && !strong) alpha = 0.10;       // anti-téléportation
+  else if (jump > MAX_FRAME_JUMP) alpha = 0.20;             // recollage progressif
+  else if (jump > 45) alpha = 0.28;
+  else alpha = 0.48;
+
+  stableSmooth = stableSmooth.map((p,i) => [p[0]*(1-alpha) + cur[i][0]*alpha, p[1]*(1-alpha) + cur[i][1]*alpha]);
+  return cloneCorners(stableSmooth);
+}
+function drawTrackedFallback(toScr, clusters, msg) {
+  ageTrackers();
+  const matched = updateTrackersWithCandidates(clusters || []);
+  const tr = getTrackedCorners();
+  if (!tr) return false;
+  const h = homography([SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL], tr.corners);
+  if (!h) return false;
+  const max = STAB_FRAMES[stabMode.value] ?? 0;
+  const allowed = max + Math.round(tr.conf * 50);
+  const oldest = cornerTrackers ? Math.max(...cornerTrackers.map(t => t.age)) : 999;
+  if (allowed <= 0 || oldest > Math.max(18, allowed)) return false;
+
+  badge.textContent = 'IMER suivi · ' + msg + ' · ' + matched + '/4 recalés';
+  badge.classList.remove('ok'); badge.classList.add('warn');
+  foot.textContent = 'Suivi prédictif V5 · confiance ' + Math.round(tr.conf*100) + '% · âge max ' + oldest + ' images.';
+  drawWallAnchored(h, toScr, true);
+  drawLastMarkersFromCorners(toScr, tr.corners, true, tr.conf);
+  return true;
+}
+function drawLastMarkersFromCorners(toScr, corners, dashed, conf) {
+  if (!corners) return;
+  octx.save();
+  if (dashed) octx.setLineDash([8, 8]);
+  octx.lineWidth = 3;
+  octx.strokeStyle = dashed ? '#f59e0b' : '#d4001a';
+  corners.forEach(p => {
+    const s = toScr({x:p[0], y:p[1]});
+    octx.beginPath(); octx.arc(s.x, s.y, 12, 0, Math.PI*2); octx.stroke();
+  });
+  octx.font = 'bold 12px -apple-system, Arial';
+  octx.fillStyle = dashed ? '#92400e' : '#065f46';
+  const p0 = toScr({x:corners[0][0], y:corners[0][1]});
+  octx.fillText('track ' + Math.round((conf||1)*100) + '%', p0.x + 14, p0.y - 10);
+  octx.restore();
+}
+
+
+function detectImerPosesFromClusters(clusters, gray, thr) {
+  const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
+  const pts = clusters.slice(0, anchorMode.value === 'between' ? 24 : 8);
+  const poses = [];
+  const combos = kCombos(pts, 4);
+  const rejectStats = {};
+  const comboStats = {combos:combos.length, hull:0, area:0, h:0, validated:0};
+
+  combos.forEach(c => {
+    const hull = orderHull(c);
+    if (hull.length !== 4) { rejectStats['hull invalide'] = (rejectStats['hull invalide']||0)+1; return; }
+    comboStats.hull++;
+    const area = polyArea(hull);
+    if (area < (anchorMode.value === 'between' ? 120 : 500)) { rejectStats['quad trop petit'] = (rejectStats['quad trop petit']||0)+1; return; }
+    comboStats.area++;
+
+    for (let rev = 0; rev < 2; rev++) {
+      const seq = rev ? hull.slice().reverse() : hull;
+      for (let rot = 0; rot < 4; rot++) {
+        const ordered = [0,1,2,3].map(i => seq[(rot+i)%4]);
+        const h = homography(objC, ordered.map(p => [p.x, p.y]));
+        if (!h) { rejectStats['homographie null'] = (rejectStats['homographie null']||0)+1; continue; }
+        comboStats.h++;
+        const q = validateImerPose(h, ordered, gray, thr, WW, WH);
+        if (!q.ok) { rejectStats[q.reason || 'rejet inconnu'] = (rejectStats[q.reason || 'rejet inconnu']||0)+1; continue; }
+        comboStats.validated++;
+        const cc = applyH(h, SPEC.circle.center[0], SPEC.circle.center[1]);
+        poses.push({h, ordered, q, center:{x:cc[0], y:cc[1]}, area});
+      }
+    }
+  });
+
+  lastRejectStats = rejectStats;
+  lastComboStats = comboStats;
+  poses.sort((a,b) => b.q.score - a.q.score);
+  const picked = [];
+  for (const p of poses) {
+    const dup = picked.some(o => Math.hypot(o.center.x-p.center.x, o.center.y-p.center.y) < 45);
+    if (!dup) picked.push(p);
+    if (picked.length >= 2) break;
+  }
+  return picked;
+}
+
+function updateDualAnchors(poses) {
+  if (!poses || poses.length < 2) return null;
+  const sorted = poses.slice(0,2).sort((a,b)=>a.center.x-b.center.x);
+  const a = sorted[0], b = sorted[1];
+  const sep = Math.hypot(a.center.x-b.center.x, a.center.y-b.center.y);
+  if (sep < 70) return null;
+  dualLast = {a, b, frame:frameId, sep, score:(a.q.score+b.q.score)/2};
+  return dualLast;
+}
+
+function getDualFallback() {
+  if (!dualLast) return null;
+  if (frameId - dualLast.frame > DUAL_MAX_AGE) return null;
+  return dualLast;
+}
+
+function drawWallBetweenDual(dual, toScr, estimated) {
+  const ca = hToScreen(dual.a.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1]);
+  const cb = hToScreen(dual.b.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1]);
+  const va = {x:cb.x-ca.x, y:cb.y-ca.y};
+  const lenPx = Math.hypot(va.x, va.y);
+  if (lenPx < 40) return false;
+  const dir = unit(va);
+  const normal = {x:-dir.y, y:dir.x};
+
+  const aRy = hToScreen(dual.a.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1] + 100);
+  const bRy = hToScreen(dual.b.h, toScr, SPEC.circle.center[0], SPEC.circle.center[1] + 100);
+  const mmToPxA = Math.hypot(aRy.x-ca.x, aRy.y-ca.y) / 100;
+  const mmToPxB = Math.hypot(bRy.x-cb.x, bRy.y-cb.y) / 100;
+  const mmToPx = clamp((mmToPxA + mmToPxB) / 2, 0.05, 2.5);
+  const thPx = clamp(WALL.th * mmToPx, 10, 90);
+  const heightPx = clamp(WALL.height * mmToPx * 0.72, 120, overlay.height * 0.72);
+
+  // Base du mur exactement entre les deux centres IMER.
+  const b0 = {x:ca.x + normal.x*thPx/2, y:ca.y + normal.y*thPx/2};
+  const b1 = {x:cb.x + normal.x*thPx/2, y:cb.y + normal.y*thPx/2};
+  const b2 = {x:cb.x - normal.x*thPx/2, y:cb.y - normal.y*thPx/2};
+  const b3 = {x:ca.x - normal.x*thPx/2, y:ca.y - normal.y*thPx/2};
+  const up = {x:0, y:-1};
+  const t0 = {x:b0.x + up.x*heightPx, y:b0.y + up.y*heightPx};
+  const t1 = {x:b1.x + up.x*heightPx, y:b1.y + up.y*heightPx};
+  const t2 = {x:b2.x + up.x*heightPx, y:b2.y + up.y*heightPx};
+  const t3 = {x:b3.x + up.x*heightPx, y:b3.y + up.y*heightPx};
+
+  drawPoly([b0,b1,t1,t0], estimated ? 'rgba(245,158,11,0.35)' : 'rgba(192,132,87,0.70)', '#374151', 2);
+  drawPoly([b1,b2,t2,t1], estimated ? 'rgba(245,158,11,0.26)' : 'rgba(214,158,110,0.62)', '#374151', 2);
+  drawPoly([b2,b3,t3,t2], estimated ? 'rgba(245,158,11,0.20)' : 'rgba(168,111,72,0.45)', '#374151', 1.5);
+
+  octx.save();
+  octx.lineWidth = 5;
+  octx.strokeStyle = estimated ? '#f59e0b' : '#d4001a';
+  octx.beginPath(); octx.moveTo(ca.x,ca.y); octx.lineTo(cb.x,cb.y); octx.stroke();
+  octx.setLineDash([8,8]);
+  octx.lineWidth = 3;
+  octx.strokeStyle = '#0f766e';
+  octx.beginPath(); octx.arc(ca.x, ca.y, 16, 0, Math.PI*2); octx.stroke();
+  octx.beginPath(); octx.arc(cb.x, cb.y, 16, 0, Math.PI*2); octx.stroke();
+  octx.restore();
+
+  const lx = (t0.x+t1.x)/2, ly = (t0.y+t1.y)/2 - 12;
+  octx.font = 'bold 16px -apple-system, Arial';
+  octx.textAlign = 'center';
+  octx.fillStyle = '#fff';
+  octx.strokeStyle = 'rgba(0,0,0,.65)';
+  octx.lineWidth = 5;
+  const metres = (lenPx / mmToPx / 1000).toFixed(2).replace('.', ',');
+  octx.strokeText('Mur entre 2 IMER · ' + metres + ' m', lx, ly);
+  octx.fillText('Mur entre 2 IMER · ' + metres + ' m', lx, ly);
+  return true;
+}
+
+
+function drawDebugCandidates(toScr, ratioCands, squareCands, clusters, poses) {
+  // Bleu = ratios, violet = carrés composants, jaune = clusters finaux, vert = poses validées.
+  octx.save();
+  octx.lineWidth = 2;
+  octx.font = 'bold 11px ui-monospace, Menlo, monospace';
+  function dot(c, color, label, r=7) {
+    const s = toScr({x:c.x, y:c.y});
+    octx.strokeStyle = color;
+    octx.fillStyle = color;
+    octx.beginPath(); octx.arc(s.x, s.y, r, 0, Math.PI*2); octx.stroke();
+    if (label) octx.fillText(label, s.x + r + 2, s.y - r);
+  }
+  ratioCands.slice(0,30).forEach((c,i)=>dot(c, '#38bdf8', 'r'+i, 5));
+  squareCands.slice(0,30).forEach((c,i)=>dot(c, '#c084fc', 's'+i, 6));
+  clusters.slice(0,30).forEach((c,i)=>dot(c, '#f59e0b', i + ':' + Math.round(c.size||0), 8));
+  (poses||[]).forEach((p,i)=>{
+    const pts = p.ordered.map(q => toScr({x:q.x,y:q.y}));
+    octx.strokeStyle = '#22c55e'; octx.lineWidth = 4;
+    octx.beginPath(); pts.forEach((pt,k)=> k ? octx.lineTo(pt.x,pt.y) : octx.moveTo(pt.x,pt.y)); octx.closePath(); octx.stroke();
+    const c = toScr(p.center); octx.fillStyle = '#22c55e'; octx.fillText('POSE '+i+' score '+Math.round(p.q.score), c.x+8, c.y);
+  });
+  octx.restore();
+}
+
+function updateDebugPanel(data) {
+  lastDebug = data;
+  const topClusters = (data.clusters||[]).slice(0,8).map((c,i)=>
+    `${i}: x${c.x.toFixed(0)} y${c.y.toFixed(0)} size${(c.size||0).toFixed(1)} conf${(c.conf||0).toFixed(0)}`
+  ).join('\n');
+  const rejects = Object.entries(lastRejectStats||{})
+    .sort((a,b)=>b[1]-a[1]).slice(0,7)
+    .map(([k,v])=>`${k}: ${v}`).join('\n') || 'aucun encore';
+  const lines = [
+    `VIDEO ${data.vw}x${data.vh} | WORK ${data.WW}x${data.WH} | fps ${fps}`,
+    `lum avg ${data.avg.toFixed(1)} | min ${data.min} max ${data.max} | otsu thr ${data.thr} | noirs ${(data.blackPct*100).toFixed(1)}%`,
+    `candidats ratio ${data.ratioCount} | carrés ${data.squareCount} | clusters ${data.clusterCount} | poses ${data.poseCount}`,
+    `combos ${lastComboStats.combos||0} | hull ${lastComboStats.hull||0} | area ${lastComboStats.area||0} | H ${lastComboStats.h||0} | valid ${lastComboStats.validated||0}`,
+    `top clusters:\n${topClusters || 'aucun'}`,
+    `rejets:\n${rejects}`
+  ];
+  debugPanel.textContent = lines.join('\n');
+}
+
+/* ================= Boucle principale ================= */
+function loop() {
+  requestAnimationFrame(loop);
+  if (video.readyState < 2) return;
+  frameId++;
+  frames++;
+  const now = performance.now();
+  if (now - lastFpsT > 1000) { fps = frames; frames = 0; lastFpsT = now; }
+
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (!vw) return;
+  const WH = Math.round(WW*vh/vw);
+  work.width = WW; work.height = WH;
+  wctx.drawImage(video, 0, 0, WW, WH);
+  const img = wctx.getImageData(0, 0, WW, WH);
+  const d = img.data;
+  const N = WW*WH;
+  const gray = new Uint8Array(N);
+  let sum = 0, gmin = 255, gmax = 0;
+  for (let i = 0; i < N; i++) {
+    const g = (d[i*4]*3 + d[i*4+1]*6 + d[i*4+2]) / 10;
+    gray[i] = g; sum += g;
+    if (g < gmin) gmin = g; if (g > gmax) gmax = g;
+  }
+  const avgLum = sum / N;
+  const thr = otsuThreshold(gray);              // plus robuste que moyenne*0.72 sur moquette / chantier
+  const bin = new Uint8Array(N);
+  let blackN = 0;
+  for (let i = 0; i < N; i++) { const b = gray[i] < thr ? 1 : 0; bin[i] = b; blackN += b; }
+
+  const ratioCands = findBullseyes(bin, WW, WH)
+    .filter(c => c.size >= 4 && c.size <= 130 && c.n >= 1);
+  const squareCands = findSquareMarkers(bin, gray, WW, WH, thr);
+  const clusters = mergeCandidates(ratioCands, squareCands)
+    .sort((a,b) => (b.conf||0) - (a.conf||0))
+    .slice(0, 24);
+
+  overlay.width = window.innerWidth * (window.devicePixelRatio||1);
+  overlay.height = window.innerHeight * (window.devicePixelRatio||1);
+  overlay.style.width = window.innerWidth + 'px';
+  overlay.style.height = window.innerHeight + 'px';
+  octx.setTransform(1,0,0,1,0,0);
+  octx.clearRect(0,0,overlay.width,overlay.height);
+  // mapping travail -> écran (video object-fit:cover)
+  const sw = overlay.width, sh = overlay.height;
+  const scale = Math.max(sw/WW, sh/WH);
+  const ox = (sw - WW*scale)/2, oy = (sh - WH*scale)/2;
+  const toScr = p => ({x: ox + p.x*scale, y: oy + p.y*scale});
+
+  updateDebugPanel({vw, vh, WW, WH, avg:avgLum, min:Math.round(gmin), max:Math.round(gmax), thr, blackPct:blackN/N, ratioCount:ratioCands.length, squareCount:squareCands.length, clusterCount:clusters.length, poseCount:0, clusters});
+  drawDebugCandidates(toScr, ratioCands, squareCands, clusters, []);
+
+  if (clusters.length < 4) {
+    if (drawTrackedFallback(toScr, clusters, 'Recherche… (' + clusters.length + '/4 coins)')) return;
+    if (drawStabilized(toScr, 'Recherche… (' + clusters.length + '/4 coins)')) return;
+    onLost('Recherche… (' + clusters.length + '/4 coins)'); return;
+  }
+
+  // Sélection robuste : on détecte toutes les feuilles IMER possibles.
+  const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
+  const poses = detectImerPosesFromClusters(clusters, gray, thr);
+  updateDebugPanel({vw, vh, WW, WH, avg:avgLum, min:Math.round(gmin), max:Math.round(gmax), thr, blackPct:blackN/N, ratioCount:ratioCands.length, squareCount:squareCands.length, clusterCount:clusters.length, poseCount:poses.length, clusters});
+  drawDebugCandidates(toScr, ratioCands, squareCands, clusters, poses);
+
+  if (anchorMode.value === 'between') {
+    const dual = updateDualAnchors(poses) || getDualFallback();
+    if (dual) {
+      const age = frameId - dual.frame;
+      badge.textContent = (age ? 'IMER 2 ancres estimé' : 'IMER 2 ancres ✓') + ' · ' + fps + ' fps';
+      badge.classList.toggle('ok', !age);
+      badge.classList.toggle('warn', !!age);
+      foot.textContent = 'Mode 2 IMER : mur accroché entre les deux centres · ' + (age ? 'pose gardée ' + age + ' images.' : '2 cibles validées.');
+      drawWallBetweenDual(dual, toScr, !!age);
+      return;
+    }
+    badge.textContent = 'Recherche 2 IMER… (' + poses.length + '/2 cibles · ' + clusters.length + ' coins)';
+    badge.classList.remove('ok');
+    badge.classList.add('warn');
+    foot.textContent = 'Mode 2 IMER V5.3 : éloigne-toi assez pour voir les 2 feuilles entières. Une feuille seule ne suffit pas.';
+  }
+
+  const bestH = poses[0] || null;
+  if (!bestH) {
+    if (drawTrackedFallback(toScr, clusters, 'cible partielle')) return;
+    if (drawStabilized(toScr, 'Cible momentanément perdue')) return;
+    onLost('Faux coins rejetés · cible non validée'); return;
+  }
+
+  // lissage temporel V5 : filtre prédictif + anti-téléportation + recalage progressif
+  const cur = bestH.ordered.map(p => [p.x, p.y]);
+  smooth = filterAcceptedCorners(cur, bestH.q.score);
+  initOrUpdateTrackers(smooth, bestH.q.score);
+  const h = homography(objC, smooth);
+  if (!h) { if (drawTrackedFallback(toScr, clusters, 'homographie instable')) return; if (drawStabilized(toScr, 'Homographie instable')) return; onLost('Homographie instable'); return; }
+  lostCount = 0;
+  lastAcceptedScore = bestH.q.score;
+  pushPoseHistory(h, smooth, bestH.q.score);
+
+  const pose = poseFromH(h, WW, WH);
+  const dist = Math.hypot(pose.t[0], pose.t[1], pose.t[2]) / 1000;
+  badge.textContent = 'IMER ✓ · ' + dist.toFixed(2) + ' m · ' + fps + ' fps';
+  badge.classList.add('ok');
+  badge.classList.remove('warn');
+  foot.textContent = 'Mur 2,00 × 2,00 m · ép. 18 cm — cible validée, score ' + Math.round(bestH.q.score) + '.';
+  lastRender = {h: h.slice(), smooth: smooth.map(p => p.slice()), frame: frameId, dist, score: bestH.q.score};
+
+  // sens "haut" : celui qui monte à l'écran (déterminé une fois)
+  if (!upSign) {
+    const c0 = projectPt(pose, SPEC.circle.center[0], SPEC.circle.center[1], 0);
+    const cU = projectPt(pose, SPEC.circle.center[0], SPEC.circle.center[1], -200);
+    upSign = (c0 && cU && cU.y < c0.y) ? -1 : 1;
+  }
+
+  drawWallAnchored(h, toScr, false);
+
+  // marqueurs : coins + centre virtuel reconstruit (le vide qui calcule)
+  octx.lineWidth = 3;
+  smooth.forEach(p => {
+    const s = toScr({x:p[0], y:p[1]});
+    octx.strokeStyle = '#d4001a';
+    octx.beginPath(); octx.arc(s.x, s.y, 12, 0, Math.PI*2); octx.stroke();
+  });
+  const [vcx, vcy] = applyH(h, SPEC.circle.center[0], SPEC.circle.center[1]);
+  const vc = toScr({x:vcx, y:vcy});
+  octx.strokeStyle = '#0f766e';
+  octx.beginPath(); octx.moveTo(vc.x-16, vc.y); octx.lineTo(vc.x+16, vc.y);
+  octx.moveTo(vc.x, vc.y-16); octx.lineTo(vc.x, vc.y+16); octx.stroke();
+}
+
+function onLost(msg) {
+  lostCount++;
+  if (lostCount > 2) {
+    // V5 : on ne détruit pas immédiatement smooth/trackers, sinon on crée une téléportation à la reprise.
+    if (lostCount > TRACK_MAX_AGE) { smooth = null; stableSmooth = null; cornerTrackers = null; upSign = 0; }
+    badge.textContent = msg;
+    badge.classList.remove('ok');
+    badge.classList.remove('warn');
+    foot.textContent = 'Vise la cible IMER A3 : les 4 petits carrés noirs doivent être nets et visibles.';
+  }
+}
+
+
+function drawStabilized(toScr, msg) {
+  const max = STAB_FRAMES[stabMode.value] ?? 0;
+  if (!lastRender || max <= 0) return false;
+  const age = frameId - lastRender.frame;
+  if (age > max) return false;
+  badge.textContent = 'IMER estimé · ' + msg;
+  badge.classList.remove('ok');
+  badge.classList.add('warn');
+  foot.textContent = 'Stabilisation ' + stabMode.options[stabMode.selectedIndex].text + ' · pose gardée ' + age + '/' + max + ' images.';
+  drawWallAnchored(lastRender.h, toScr, true);
+  drawLastMarkers(toScr, true);
+  return true;
+}
+
+function drawLastMarkers(toScr, dashed) {
+  if (!lastRender || !lastRender.smooth) return;
+  octx.save();
+  if (dashed) octx.setLineDash([8, 8]);
+  octx.lineWidth = 3;
+  octx.strokeStyle = dashed ? '#f59e0b' : '#d4001a';
+  lastRender.smooth.forEach(p => {
+    const s = toScr({x:p[0], y:p[1]});
+    octx.beginPath(); octx.arc(s.x, s.y, 12, 0, Math.PI*2); octx.stroke();
+  });
+  octx.restore();
+}
+
+function hToScreen(h, toScr, x, y) {
+  const p = applyH(h, x, y);
+  return toScr({x:p[0], y:p[1]});
+}
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function unit(v) {
+  const n = Math.hypot(v.x, v.y) || 1;
+  return {x:v.x/n, y:v.y/n};
+}
+
+function drawWallAnchored(h, toScr, estimated) {
+  const cx = SPEC.circle.center[0], cyv = SPEC.circle.center[1];
+  const L = WALL.len, T = WALL.th;
+  let x0, x1, y0, y1;
+  const mode = anchorMode.value;
+
+  // La feuille est un ANCRAGE. Le mur peut dépasser largement : on ne l'annule plus.
+  if (mode === 'center') {
+    x0 = cx - L/2; x1 = cx + L/2; y0 = cyv - T/2; y1 = cyv + T/2;
+  } else if (mode === 'right') {
+    x0 = cx - L; x1 = cx; y0 = cyv - T/2; y1 = cyv + T/2;
+  } else if (mode === 'front') {
+    x0 = cx - L/2; x1 = cx + L/2; y0 = cyv + 120; y1 = cyv + 120 + T;
+  } else { // coin gauche par défaut
+    x0 = cx; x1 = cx + L; y0 = cyv - T/2; y1 = cyv + T/2;
+  }
+
+  const b0 = hToScreen(h, toScr, x0, y0);
+  const b1 = hToScreen(h, toScr, x1, y0);
+  const b2 = hToScreen(h, toScr, x1, y1);
+  const b3 = hToScreen(h, toScr, x0, y1);
+  const c0 = hToScreen(h, toScr, cx, cyv);
+  const rx = hToScreen(h, toScr, cx + 500, cyv);
+  const ry = hToScreen(h, toScr, cx, cyv + 500);
+
+  const sx = Math.hypot(rx.x-c0.x, rx.y-c0.y) / 500;
+  const sy = Math.hypot(ry.x-c0.x, ry.y-c0.y) / 500;
+  const mmToPx = clamp((sx + sy) / 2, 0.05, 2.5);
+  const heightPx = clamp(WALL.height * mmToPx * 0.72, 120, overlay.height * 0.72);
+
+  // V4 : rendu billboard stable. Le mur monte à l'écran depuis la base de la feuille.
+  // Cela évite que tout disparaisse dès qu'un point 3D part derrière la caméra.
+  const up = {x:0, y:-1};
+  const t0 = {x:b0.x + up.x*heightPx, y:b0.y + up.y*heightPx};
+  const t1 = {x:b1.x + up.x*heightPx, y:b1.y + up.y*heightPx};
+  const t2 = {x:b2.x + up.x*heightPx, y:b2.y + up.y*heightPx};
+  const t3 = {x:b3.x + up.x*heightPx, y:b3.y + up.y*heightPx};
+
+  // Face principale : côté long visible
+  drawPoly([b0,b1,t1,t0], estimated ? 'rgba(245,158,11,0.35)' : 'rgba(192,132,87,0.68)', '#374151', 2);
+  // Épaisseur / retour
+  drawPoly([b1,b2,t2,t1], estimated ? 'rgba(245,158,11,0.28)' : 'rgba(214,158,110,0.62)', '#374151', 2);
+  drawPoly([b2,b3,t3,t2], estimated ? 'rgba(245,158,11,0.22)' : 'rgba(168,111,72,0.45)', '#374151', 1.5);
+
+  // Ligne de base très visible + flèche de longueur
+  octx.save();
+  octx.lineWidth = 5;
+  octx.strokeStyle = estimated ? '#f59e0b' : '#d4001a';
+  octx.beginPath(); octx.moveTo(b0.x,b0.y); octx.lineTo(b1.x,b1.y); octx.stroke();
+  octx.setLineDash([10,8]);
+  octx.lineWidth = 2;
+  octx.strokeStyle = 'rgba(17,24,39,.75)';
+  octx.beginPath(); octx.moveTo(b0.x,b0.y); octx.lineTo(b3.x,b3.y); octx.stroke();
+  octx.restore();
+
+  const label = mode === 'left' ? 'Mur depuis coin gauche' : mode === 'right' ? 'Mur depuis coin droit' : mode === 'front' ? 'Mur devant feuille' : 'Mur centré';
+  const lx = (t0.x + t1.x)/2, ly = (t0.y + t1.y)/2 - 12;
+  octx.font = 'bold 16px -apple-system, Arial';
+  octx.textAlign = 'center';
+  octx.fillStyle = '#fff';
+  octx.strokeStyle = 'rgba(0,0,0,.65)';
+  octx.lineWidth = 5;
+  octx.strokeText(label + ' · 2,00 m', lx, ly);
+  octx.fillText(label + ' · 2,00 m', lx, ly);
+}
+
+function drawPoly(pts, fill, stroke, lw) {
+  octx.beginPath();
+  pts.forEach((p,i) => { i ? octx.lineTo(p.x,p.y) : octx.moveTo(p.x,p.y); });
+  octx.closePath();
+  octx.fillStyle = fill;
+  octx.strokeStyle = stroke;
+  octx.lineWidth = lw;
+  octx.fill();
+  octx.stroke();
+}
+
+
+/* ================= validation anti-faux positifs ================= */
+function otsuThreshold(gray) {
+  const hist = new Uint32Array(256);
+  for (let i = 0; i < gray.length; i++) hist[gray[i]]++;
+  const total = gray.length;
+  let sum = 0;
+  for (let t = 0; t < 256; t++) sum += t * hist[t];
+  let sumB = 0, wB = 0, best = 0, bestVar = -1;
+  for (let t = 0; t < 256; t++) {
+    wB += hist[t];
+    if (!wB) continue;
+    const wF = total - wB;
+    if (!wF) break;
+    sumB += t * hist[t];
+    const mB = sumB / wB;
+    const mF = (sum - sumB) / wF;
+    const v = wB * wF * (mB - mF) * (mB - mF);
+    if (v > bestVar) { bestVar = v; best = t; }
+  }
+  // sécurité : évite un seuil trop bas quand la scène est majoritairement sombre/grise
+  return Math.max(45, Math.min(210, best));
+}
+
+function sampleLum(gray, W, H, x, y, r=2) {
+  const xi = Math.round(x), yi = Math.round(y);
+  if (xi < r || yi < r || xi >= W-r || yi >= H-r) return null;
+  let s = 0, n = 0;
+  for (let yy = -r; yy <= r; yy++) {
+    for (let xx = -r; xx <= r; xx++) {
+      s += gray[(yi+yy)*W + xi+xx]; n++;
+    }
+  }
+  return s/n;
+}
+
+function validateImerPose(h, ordered, gray, thr, W, H) {
+  const proj = (p) => {
+    const q = applyH(h, p[0], p[1]);
+    if (!Number.isFinite(q[0]) || !Number.isFinite(q[1])) return null;
+    return {x:q[0], y:q[1]};
+  };
+  const lum = (p, r=2) => {
+    const q = proj(p);
+    if (!q) return null;
+    return sampleLum(gray, W, H, q.x, q.y, r);
+  };
+
+  // 1) La feuille A3 projetée doit exister à l'écran et avoir une vraie surface.
+  //    C'est le verrou principal contre les faux positifs dans la moquette.
+  const pagePoly = [[0,0], [SPEC.page[0],0], SPEC.page, [0,SPEC.page[1]]].map(proj);
+  if (pagePoly.some(p => !p)) return {ok:false, score:-999, reason:'page hors champ'};
+  const pageArea = polyArea(pagePoly);
+  if (pageArea < (anchorMode.value === 'between' ? 520 : 1200)) return {ok:false, score:-999, reason:'feuille trop petite'};
+
+  const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+  const pwTop = d(pagePoly[0], pagePoly[1]);
+  const pwBot = d(pagePoly[3], pagePoly[2]);
+  const phLeft = d(pagePoly[0], pagePoly[3]);
+  const phRight = d(pagePoly[1], pagePoly[2]);
+  if (Math.min(pwTop,pwBot,phLeft,phRight) < (anchorMode.value === 'between' ? 8 : 14)) return {ok:false, score:-999, reason:'côtés trop courts'};
+  if (Math.max(pwTop,pwBot) / Math.min(pwTop,pwBot) > 3.80) return {ok:false, score:-999, reason:'haut/bas incohérents'};
+  if (Math.max(phLeft,phRight) / Math.min(phLeft,phRight) > 3.80) return {ok:false, score:-999, reason:'gauche/droite incohérents'};
+
+  const center = proj(SPEC.circle.center);
+  if (!center || !pointInPoly(center, pagePoly)) return {ok:false, score:-999, reason:'centre hors feuille'};
+
+  // 2) La cible doit être imprimée sur une grande zone blanche.
+  //    On échantillonne des points sûrs de la feuille, loin des traits noirs.
+  const whitePts = [
+    [210,18], [210,279], [20,148], [400,148], [210,148.5],
+    [145,148], [275,148], [145,90], [275,90], [145,207], [275,207],
+    [85,80], [335,80], [85,225], [335,225], [210,60], [210,237]
+  ];
+  const whiteVals = whitePts.map(p => lum(p, 3)).filter(v => v !== null);
+  if (whiteVals.length < (anchorMode.value === 'between' ? 8 : 12)) return {ok:false, score:-999, reason:'feuille incomplète'};
+  const avgWhite = whiteVals.reduce((a,b)=>a+b,0) / whiteVals.length;
+  const whiteLimit = Math.max(128, Math.min(188, thr + 16)); // V5.5: feuille bleutée/surexposée Safari
+  const whiteOk = whiteVals.filter(v => v > whiteLimit).length;
+  if (avgWhite < whiteLimit - 22 || whiteOk < Math.ceil(whiteVals.length * 0.42)) {
+    return {ok:false, score:-999, reason:'pas de feuille blanche'};
+  }
+
+  // 3) Validation stricte des 4 coins : noir / blanc / noir / blanc.
+  //    Sans cette signature, aucun IMER ✓, même si 4 points forment un quadrilatère.
+  const cornerPts = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
+  let cornerScore = 0;
+  let cornerOk = 0;
+  for (const c of cornerPts) {
+    const q0 = lum(c, 2); // coeur noir
+    const midOffsets = [[5,0],[-5,0],[0,5],[0,-5]];     // anneau blanc
+    const outerOffsets = [[10,0],[-10,0],[0,10],[0,-10]]; // anneau noir
+    const bgOffsets = [[16,0],[-16,0],[0,16],[0,-16]];  // papier blanc hors cible
+    const mids = midOffsets.map(o => lum([c[0]+o[0], c[1]+o[1]], 1)).filter(v=>v!==null);
+    const outers = outerOffsets.map(o => lum([c[0]+o[0], c[1]+o[1]], 1)).filter(v=>v!==null);
+    const bgs = bgOffsets.map(o => lum([c[0]+o[0], c[1]+o[1]], 1)).filter(v=>v!==null);
+    if (q0 === null || mids.length < 3 || outers.length < 3 || bgs.length < 3) continue;
+    const avgMid = mids.reduce((a,b)=>a+b,0)/mids.length;
+    const avgOuter = outers.reduce((a,b)=>a+b,0)/outers.length;
+    const avgBg = bgs.reduce((a,b)=>a+b,0)/bgs.length;
+
+    const darkCore = avgWhite - q0;
+    const whiteMid = avgMid - q0;
+    const darkOuter = avgBg - avgOuter;
+    const bgWhite = avgBg > whiteLimit - 8;
+
+    if (darkCore > 20 && whiteMid > 12 && darkOuter > 10 && (bgWhite || true)) {
+      cornerOk++;
+      cornerScore += darkCore + whiteMid + darkOuter;
+    }
+  }
+  if (cornerOk < 2) return {ok:false, score:-999, reason:'coins non confirmés'};
+
+  // 4) Disque asymétrique : noir à gauche, pas de disque au miroir droit.
+  const discLum = lum(SPEC.asym_disc.center, 2);
+  const mirrorLum = lum([SPEC.page[0]-SPEC.asym_disc.center[0], SPEC.asym_disc.center[1]], 2);
+  if (discLum === null || mirrorLum === null) return {ok:false, score:-999, reason:'asym hors champ'};
+  const asym = mirrorLum - discLum;
+  if (avgWhite - discLum < 18 || asym < 8) {
+    return {ok:false, score:-999, reason:'asymétrie non confirmée'};
+  }
+
+  // 5) Éléments internes : colonnes, barres et arcs doivent être sombres par contraste avec le papier.
+  const blackChecks = [
+    [60,130], [60,170], [360,130], [360,170],
+    [100,52], [320,52], [100,245], [320,245],
+    [122,120], [298,177]
+  ];
+  let blackOk = 0;
+  let blackScore = 0;
+  for (const p of blackChecks) {
+    const v = lum(p, 2);
+    if (v !== null && avgWhite - v > 16) { blackOk++; blackScore += avgWhite - v; }
+  }
+  if (blackOk < 3) return {ok:false, score:-999, reason:'motifs internes non confirmés'};
+
+  // 6) Garde-fou distance : une cible A3 vue dans l'image ne peut pas donner 10 cm.
+  //    On ne calcule pas ici la distance caméra, mais on évite les homographies dégénérées.
+  const markerArea = polyArea(ordered);
+  if (markerArea < pageArea * 0.10 || markerArea > pageArea * 0.99) {
+    return {ok:false, score:-999, reason:'échelle marqueurs incohérente'};
+  }
+
+  const score = Math.round((avgWhite - whiteLimit) * 2 + cornerScore + blackScore + asym + pageArea / 80);
+  return {ok:true, score, reason:'ok'};
+}
+function pointInPoly(p, poly) {
+  let inside = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const xi = poly[i].x, yi = poly[i].y;
+    const xj = poly[j].x, yj = poly[j].y;
+    const intersect = ((yi > p.y) !== (yj > p.y)) &&
+      (p.x < (xj - xi) * (p.y - yi) / ((yj - yi) || 1e-9) + xi);
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+/* ================= utilitaires géométrie ================= */
+function kCombos(arr, k) {
+  const out = [];
+  const rec = (start, cur) => {
+    if (cur.length === k) { out.push(cur.slice()); return; }
+    for (let i = start; i < arr.length; i++) { cur.push(arr[i]); rec(i+1, cur); cur.pop(); }
+  };
+  rec(0, []);
+  return out;
+}
+function orderHull(pts) {
+  const c = {x: pts.reduce((a,p)=>a+p.x,0)/pts.length, y: pts.reduce((a,p)=>a+p.y,0)/pts.length};
+  const sorted = pts.slice().sort((a,b) => Math.atan2(a.y-c.y, a.x-c.x) - Math.atan2(b.y-c.y, b.x-c.x));
+  // convexité stricte
+  for (let i = 0; i < 4; i++) {
+    const a = sorted[i], b = sorted[(i+1)%4], d = sorted[(i+2)%4];
+    const cr = (b.x-a.x)*(d.y-b.y) - (b.y-a.y)*(d.x-b.x);
+    if (Math.abs(cr) < 1e-6) return [];
+  }
+  return sorted;
+}
+function polyArea(pts) {
+  let a = 0;
+  for (let i = 0; i < pts.length; i++) {
+    const j = (i+1)%pts.length;
+    a += pts[i].x*pts[j].y - pts[j].x*pts[i].y;
+  }
+  return Math.abs(a)/2;
+}
+})();
+</script>
+</body>
+</html>
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>IMER Live V5.3 · Dual IMER · RS BAT</title>
+<style>
+  html,body{margin:0;height:100%;background:#000;font-family:-apple-system,Segoe UI,Arial,sans-serif;overflow:hidden}
+  #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
+  #overlay{position:fixed;inset:0;width:100%;height:100%}
+  .hud{position:fixed;top:10px;left:10px;right:10px;z-index:10;display:flex;align-items:center;gap:10px;
+       background:rgba(255,255,255,.92);border-left:5px solid #d4001a;border-radius:12px;padding:10px 12px}
+  .hud b{color:#d4001a}
+  .badge{margin-left:auto;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:800;background:#fee2e2;color:#991b1b;white-space:nowrap}
+  .badge.ok{background:#d1fae5;color:#065f46}
+  .badge.warn{background:#fef3c7;color:#92400e}
+  #startBtn{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;padding:18px 30px;
+            border:0;border-radius:14px;background:#d4001a;color:#fff;font-size:18px;font-weight:800;box-shadow:0 8px 30px rgba(0,0,0,.4)}
+  .foot{position:fixed;bottom:10px;left:10px;right:10px;z-index:10;background:rgba(255,255,255,.88);
+        border-radius:10px;padding:8px 11px;font-size:12px;color:#1f2328}
+  .tools{position:fixed;left:10px;right:10px;bottom:58px;z-index:11;display:flex;gap:8px;align-items:center;justify-content:center;pointer-events:auto}
+  .tools label{background:rgba(255,255,255,.92);border-radius:999px;padding:6px 9px;font-size:12px;font-weight:800;color:#1f2328;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+  .tools select{border:0;background:#f3f4f6;border-radius:999px;padding:6px 8px;font-weight:800;color:#111827;max-width:132px}
 </style>
 </head>
 <body>
