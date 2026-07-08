@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
-<title>IMER Live · RS BAT · Mur 2m</title>
+<title>IMER Live V5 · RS BAT · Mur 2m</title>
 <style>
   html,body{margin:0;height:100%;background:#000;font-family:-apple-system,Segoe UI,Arial,sans-serif;overflow:hidden}
   #video{position:fixed;inset:0;width:100%;height:100%;object-fit:cover}
@@ -74,6 +74,17 @@ let upSign = 0;              // conservé pour compat ancienne, plus critique en
 let fps = 0, frames = 0, lastFpsT = performance.now();
 let frameId = 0;
 let lastRender = null;       // dernière homographie valide pour stabilisation
+
+// ================= IMER V5 — suivi prédictif / anti-téléportation =================
+// Au lieu de jeter la pose dès qu'un coin disparaît, on conserve un état dynamique
+// pour chacun des 4 coins : position, vitesse, âge et confiance.
+let cornerTrackers = null;   // [{x,y,vx,vy,age,conf,seen}] dans l'ordre TL,TR,BR,BL
+let poseHistory = [];        // mémoire courte des poses/homographies validées
+let stableSmooth = null;     // coins finaux utilisés pour le rendu, après filtre anti-saut
+let lastAcceptedScore = 0;
+const HISTORY_MAX = 60;
+const TRACK_MAX_AGE = 90;    // frames : au-delà, on considère la prédiction trop vieille
+const MAX_FRAME_JUMP = 95;   // px travail : au-delà, nouvelle pose suspecte sauf score très fort
 const STAB_FRAMES = {off:0, low:8, med:20, high:45};
 
 document.getElementById('startBtn').addEventListener('click', async () => {
@@ -320,6 +331,149 @@ function projectPt(pose, X, Y, Z) {
   return {x: cx + f*x/z, y: cy + f*y/z, z};
 }
 
+
+
+/* ================= IMER V5 — moteur de suivi prédictif ================= */
+function cloneCorners(corners) { return corners.map(p => [p[0], p[1]]); }
+function avgCornerJump(a, b) {
+  if (!a || !b || a.length !== 4 || b.length !== 4) return 9999;
+  let s = 0;
+  for (let i = 0; i < 4; i++) s += Math.hypot(a[i][0]-b[i][0], a[i][1]-b[i][1]);
+  return s / 4;
+}
+function pushPoseHistory(h, corners, score) {
+  poseHistory.push({frame: frameId, h: h.slice(), corners: cloneCorners(corners), score});
+  if (poseHistory.length > HISTORY_MAX) poseHistory.shift();
+}
+function initOrUpdateTrackers(corners, score) {
+  if (!cornerTrackers) {
+    cornerTrackers = corners.map(p => ({x:p[0], y:p[1], vx:0, vy:0, age:0, conf:1, seen:true}));
+    return;
+  }
+  for (let i = 0; i < 4; i++) {
+    const t = cornerTrackers[i];
+    const nx = corners[i][0], ny = corners[i][1];
+    // vitesse amortie : évite les accélérations impossibles dues aux faux positifs
+    const nvx = clamp(nx - t.x, -35, 35);
+    const nvy = clamp(ny - t.y, -35, 35);
+    t.vx = t.vx * 0.55 + nvx * 0.45;
+    t.vy = t.vy * 0.55 + nvy * 0.45;
+    t.x = nx; t.y = ny; t.age = 0; t.conf = Math.min(1, 0.65 + score/4500); t.seen = true;
+  }
+}
+function predictCorners() {
+  if (!cornerTrackers) return null;
+  return cornerTrackers.map(t => {
+    const ageBoost = Math.min(t.age + 1, 10);
+    return [t.x + t.vx * ageBoost * 0.35, t.y + t.vy * ageBoost * 0.35];
+  });
+}
+function ageTrackers() {
+  if (!cornerTrackers) return;
+  cornerTrackers.forEach(t => { t.age++; t.conf *= 0.965; t.seen = false; });
+}
+function updateTrackersWithCandidates(clusters) {
+  // Suivi local : si un coin était ici à l'image précédente, on cherche d'abord autour de lui.
+  // Cela évite le mode brutal 4 coins -> 0 coin.
+  if (!cornerTrackers || !clusters || !clusters.length) return 0;
+  let matched = 0;
+  const used = new Set();
+  const preds = predictCorners();
+  for (let i = 0; i < 4; i++) {
+    const t = cornerTrackers[i];
+    if (t.age > TRACK_MAX_AGE) continue;
+    let best = null, bestD = 1e9, bestIdx = -1;
+    for (let j = 0; j < clusters.length; j++) {
+      if (used.has(j)) continue;
+      const c = clusters[j];
+      const d = Math.hypot(c.x - preds[i][0], c.y - preds[i][1]);
+      const gate = clamp(28 + t.age * 4 + (c.size||10) * 1.3, 35, 145);
+      if (d < gate && d < bestD) { best = c; bestD = d; bestIdx = j; }
+    }
+    if (best) {
+      used.add(bestIdx); matched++;
+      const nx = best.x, ny = best.y;
+      t.vx = t.vx * 0.65 + clamp(nx - t.x, -28, 28) * 0.35;
+      t.vy = t.vy * 0.65 + clamp(ny - t.y, -28, 28) * 0.35;
+      t.x = t.x * 0.35 + nx * 0.65;
+      t.y = t.y * 0.35 + ny * 0.65;
+      t.age = 0; t.conf = Math.min(1, t.conf + 0.22); t.seen = true;
+    }
+  }
+  return matched;
+}
+function trackedCornersConfidence() {
+  if (!cornerTrackers) return 0;
+  let conf = 0;
+  for (const t of cornerTrackers) {
+    const agePenalty = Math.max(0, 1 - t.age / TRACK_MAX_AGE);
+    conf += t.conf * agePenalty;
+  }
+  return conf / 4;
+}
+function getTrackedCorners() {
+  if (!cornerTrackers) return null;
+  const conf = trackedCornersConfidence();
+  if (conf < 0.22) return null;
+  const pts = cornerTrackers.map(t => [t.x + t.vx * Math.min(t.age, 6) * 0.25, t.y + t.vy * Math.min(t.age, 6) * 0.25]);
+  // garde-fou : le quadrilatère doit rester plausible
+  const area = polyArea(pts.map(p => ({x:p[0], y:p[1]})));
+  if (area < 350) return null;
+  return {corners: pts, conf};
+}
+function filterAcceptedCorners(cur, score) {
+  // Filtre équivalent Kalman simplifié : prédiction + mesure + rejet des accélérations impossibles.
+  if (!stableSmooth) {
+    stableSmooth = cloneCorners(cur);
+    return cloneCorners(cur);
+  }
+  const jump = avgCornerJump(cur, stableSmooth);
+  const strong = score > Math.max(1800, lastAcceptedScore * 0.82);
+  let alpha = 0.42;
+  if (jump > MAX_FRAME_JUMP && !strong) alpha = 0.10;       // anti-téléportation
+  else if (jump > MAX_FRAME_JUMP) alpha = 0.20;             // recollage progressif
+  else if (jump > 45) alpha = 0.28;
+  else alpha = 0.48;
+
+  stableSmooth = stableSmooth.map((p,i) => [p[0]*(1-alpha) + cur[i][0]*alpha, p[1]*(1-alpha) + cur[i][1]*alpha]);
+  return cloneCorners(stableSmooth);
+}
+function drawTrackedFallback(toScr, clusters, msg) {
+  ageTrackers();
+  const matched = updateTrackersWithCandidates(clusters || []);
+  const tr = getTrackedCorners();
+  if (!tr) return false;
+  const h = homography([SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL], tr.corners);
+  if (!h) return false;
+  const max = STAB_FRAMES[stabMode.value] ?? 0;
+  const allowed = max + Math.round(tr.conf * 50);
+  const oldest = cornerTrackers ? Math.max(...cornerTrackers.map(t => t.age)) : 999;
+  if (allowed <= 0 || oldest > Math.max(18, allowed)) return false;
+
+  badge.textContent = 'IMER suivi · ' + msg + ' · ' + matched + '/4 recalés';
+  badge.classList.remove('ok'); badge.classList.add('warn');
+  foot.textContent = 'Suivi prédictif V5 · confiance ' + Math.round(tr.conf*100) + '% · âge max ' + oldest + ' images.';
+  drawWallAnchored(h, toScr, true);
+  drawLastMarkersFromCorners(toScr, tr.corners, true, tr.conf);
+  return true;
+}
+function drawLastMarkersFromCorners(toScr, corners, dashed, conf) {
+  if (!corners) return;
+  octx.save();
+  if (dashed) octx.setLineDash([8, 8]);
+  octx.lineWidth = 3;
+  octx.strokeStyle = dashed ? '#f59e0b' : '#d4001a';
+  corners.forEach(p => {
+    const s = toScr({x:p[0], y:p[1]});
+    octx.beginPath(); octx.arc(s.x, s.y, 12, 0, Math.PI*2); octx.stroke();
+  });
+  octx.font = 'bold 12px -apple-system, Arial';
+  octx.fillStyle = dashed ? '#92400e' : '#065f46';
+  const p0 = toScr({x:corners[0][0], y:corners[0][1]});
+  octx.fillText('track ' + Math.round((conf||1)*100) + '%', p0.x + 14, p0.y - 10);
+  octx.restore();
+}
+
 /* ================= Boucle principale ================= */
 function loop() {
   requestAnimationFrame(loop);
@@ -366,7 +520,11 @@ function loop() {
   const ox = (sw - WW*scale)/2, oy = (sh - WH*scale)/2;
   const toScr = p => ({x: ox + p.x*scale, y: oy + p.y*scale});
 
-  if (clusters.length < 4) { if (drawStabilized(toScr, 'Recherche… (' + clusters.length + '/4 coins)')) return; onLost('Recherche… (' + clusters.length + '/4 coins)'); return; }
+  if (clusters.length < 4) {
+    if (drawTrackedFallback(toScr, clusters, 'Recherche… (' + clusters.length + '/4 coins)')) return;
+    if (drawStabilized(toScr, 'Recherche… (' + clusters.length + '/4 coins)')) return;
+    onLost('Recherche… (' + clusters.length + '/4 coins)'); return;
+  }
 
   // Sélection robuste : on teste toutes les combinaisons et on rejette les faux positifs.
   const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
@@ -394,15 +552,21 @@ function loop() {
     }
   });
 
-  if (!bestH) { if (drawStabilized(toScr, 'Cible momentanément perdue')) return; onLost('Faux coins rejetés · cible non validée'); return; }
+  if (!bestH) {
+    if (drawTrackedFallback(toScr, clusters, 'cible partielle')) return;
+    if (drawStabilized(toScr, 'Cible momentanément perdue')) return;
+    onLost('Faux coins rejetés · cible non validée'); return;
+  }
 
-  // lissage temporel des coins
+  // lissage temporel V5 : filtre prédictif + anti-téléportation + recalage progressif
   const cur = bestH.ordered.map(p => [p.x, p.y]);
-  if (!smooth) smooth = cur;
-  else smooth = smooth.map((p,i) => [p[0]*0.55 + cur[i][0]*0.45, p[1]*0.55 + cur[i][1]*0.45]);
+  smooth = filterAcceptedCorners(cur, bestH.q.score);
+  initOrUpdateTrackers(smooth, bestH.q.score);
   const h = homography(objC, smooth);
-  if (!h) { if (drawStabilized(toScr, 'Homographie instable')) return; onLost('Homographie instable'); return; }
+  if (!h) { if (drawTrackedFallback(toScr, clusters, 'homographie instable')) return; if (drawStabilized(toScr, 'Homographie instable')) return; onLost('Homographie instable'); return; }
   lostCount = 0;
+  lastAcceptedScore = bestH.q.score;
+  pushPoseHistory(h, smooth, bestH.q.score);
 
   const pose = poseFromH(h, WW, WH);
   const dist = Math.hypot(pose.t[0], pose.t[1], pose.t[2]) / 1000;
@@ -438,8 +602,8 @@ function loop() {
 function onLost(msg) {
   lostCount++;
   if (lostCount > 2) {
-    smooth = null;
-    upSign = 0;
+    // V5 : on ne détruit pas immédiatement smooth/trackers, sinon on crée une téléportation à la reprise.
+    if (lostCount > TRACK_MAX_AGE) { smooth = null; stableSmooth = null; cornerTrackers = null; upSign = 0; }
     badge.textContent = msg;
     badge.classList.remove('ok');
     badge.classList.remove('warn');
@@ -623,8 +787,8 @@ function validateImerPose(h, ordered, gray, thr, W, H) {
   const phLeft = d(pagePoly[0], pagePoly[3]);
   const phRight = d(pagePoly[1], pagePoly[2]);
   if (Math.min(pwTop,pwBot,phLeft,phRight) < 18) return {ok:false, score:-999, reason:'côtés trop courts'};
-  if (Math.max(pwTop,pwBot) / Math.min(pwTop,pwBot) > 2.15) return {ok:false, score:-999, reason:'haut/bas incohérents'};
-  if (Math.max(phLeft,phRight) / Math.min(phLeft,phRight) > 2.15) return {ok:false, score:-999, reason:'gauche/droite incohérents'};
+  if (Math.max(pwTop,pwBot) / Math.min(pwTop,pwBot) > 3.80) return {ok:false, score:-999, reason:'haut/bas incohérents'};
+  if (Math.max(phLeft,phRight) / Math.min(phLeft,phRight) > 3.80) return {ok:false, score:-999, reason:'gauche/droite incohérents'};
 
   const center = proj(SPEC.circle.center);
   if (!center || !pointInPoly(center, pagePoly)) return {ok:false, score:-999, reason:'centre hors feuille'};
@@ -673,7 +837,7 @@ function validateImerPose(h, ordered, gray, thr, W, H) {
       cornerScore += darkCore + whiteMid + darkOuter;
     }
   }
-  if (cornerOk < 4) return {ok:false, score:-999, reason:'coins non confirmés'};
+  if (cornerOk < 3) return {ok:false, score:-999, reason:'coins non confirmés'};
 
   // 4) Disque asymétrique : noir à gauche, pas de disque au miroir droit.
   const discLum = lum(SPEC.asym_disc.center, 2);
