@@ -43,7 +43,7 @@
     <option value="high">Forte</option>
   </select></label>
 </div>
-<div class="foot" id="foot">Vise la cible IMER A3 imprimée. Les 4 coins doivent être visibles et nets.</div>
+<div class="foot" id="foot">Vise les cibles IMER A3. Mode haute résolution 960px activé.</div>
 
 <script>
 (() => {
@@ -68,7 +68,7 @@ const anchorMode = document.getElementById('anchorMode');
 const stabMode = document.getElementById('stabMode');
 const work = document.createElement('canvas');
 const wctx = work.getContext('2d', {willReadFrequently:true});
-const WW = 720;              // largeur de travail (détection) — V5.3: meilleur rappel pour 2 IMER éloignés
+const WW = 960;              // largeur de travail (détection) — V5.4 HighRes iPhone Pro 16
 let smooth = null;           // coins lissés
 let lostCount = 99;
 let upSign = 0;              // conservé pour compat ancienne, plus critique en V4
@@ -98,7 +98,7 @@ const DUAL_MAX_AGE = 50;
 document.getElementById('startBtn').addEventListener('click', async () => {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: {facingMode:{ideal:'environment'}, width:{ideal:1280}, height:{ideal:720}}, audio: false
+      video: {facingMode:{ideal:'environment'}, width:{ideal:1920}, height:{ideal:1080}}, audio: false
     });
     video.srcObject = stream;
     await video.play();
@@ -195,7 +195,7 @@ function findSquareMarkers(bin, gray, W, H, thr) {
   const qx = new Int32Array(W*H > 90000 ? 90000 : W*H);
   const qy = new Int32Array(qx.length);
   const maxQ = qx.length;
-  const darkLimit = Math.max(35, thr + 18);
+  const darkLimit = Math.max(30, thr + 10);
 
   for (let y = 1; y < H-1; y++) {
     for (let x = 1; x < W-1; x++) {
@@ -223,7 +223,7 @@ function findSquareMarkers(bin, gray, W, H, thr) {
       }
 
       const bw = maxX - minX + 1, bh = maxY - minY + 1;
-      if (count < 8 || bw < 5 || bh < 5 || bw > 70 || bh > 70) continue;
+      if (count < 8 || bw < 5 || bh < 5 || bw > 120 || bh > 120) continue;
       const ar = bw / bh;
       if (ar < 0.38 || ar > 2.65) continue;
       const fill = count / (bw * bh);
@@ -618,7 +618,7 @@ function loop() {
   for (let i = 0; i < N; i++) bin[i] = gray[i] < thr ? 1 : 0;
 
   const ratioCands = findBullseyes(bin, WW, WH)
-    .filter(c => c.size >= 7 && c.size <= 70 && c.n >= 2);
+    .filter(c => c.size >= 5 && c.size <= 140 && c.n >= 2);
   const squareCands = findSquareMarkers(bin, gray, WW, WH, thr);
   const clusters = mergeCandidates(ratioCands, squareCands)
     .sort((a,b) => (b.conf||0) - (a.conf||0))
