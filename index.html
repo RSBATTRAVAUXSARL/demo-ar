@@ -143,6 +143,97 @@ function findBullseyes(bin, W, H) {
   return clusters.filter(c => c.n >= 2).sort((a,b) => b.n - a.n).slice(0, 8);
 }
 
+
+/* ================= Détection carrés IMER par composants connexes =================
+   Cette voie est volontairement plus simple que le balayage QR : elle cherche les
+   petits carrés imbriqués noirs des 4 coins, même quand la cible est inclinée/floue. */
+function findSquareMarkers(bin, gray, W, H, thr) {
+  const seen = new Uint8Array(W*H);
+  const out = [];
+  const qx = new Int32Array(W*H > 90000 ? 90000 : W*H);
+  const qy = new Int32Array(qx.length);
+  const maxQ = qx.length;
+  const darkLimit = Math.max(35, thr + 18);
+
+  for (let y = 1; y < H-1; y++) {
+    for (let x = 1; x < W-1; x++) {
+      const idx0 = y*W + x;
+      if (seen[idx0] || !bin[idx0]) continue;
+
+      let head = 0, tail = 0;
+      let minX = x, maxX = x, minY = y, maxY = y, count = 0;
+      seen[idx0] = 1; qx[tail] = x; qy[tail] = y; tail++;
+
+      while (head < tail && head < maxQ) {
+        const cx = qx[head], cy = qy[head]; head++; count++;
+        if (cx < minX) minX = cx; if (cx > maxX) maxX = cx;
+        if (cy < minY) minY = cy; if (cy > maxY) maxY = cy;
+        const nb = [[cx+1,cy],[cx-1,cy],[cx,cy+1],[cx,cy-1]];
+        for (let k = 0; k < 4; k++) {
+          const nx = nb[k][0], ny = nb[k][1];
+          if (nx <= 0 || ny <= 0 || nx >= W-1 || ny >= H-1) continue;
+          const ii = ny*W + nx;
+          if (!seen[ii] && bin[ii]) {
+            seen[ii] = 1;
+            if (tail < maxQ) { qx[tail] = nx; qy[tail] = ny; tail++; }
+          }
+        }
+      }
+
+      const bw = maxX - minX + 1, bh = maxY - minY + 1;
+      if (count < 14 || bw < 7 || bh < 7 || bw > 42 || bh > 42) continue;
+      const ar = bw / bh;
+      if (ar < 0.55 || ar > 1.85) continue;
+      const fill = count / (bw * bh);
+      if (fill < 0.18 || fill > 0.78) continue; // anneau carré, pas barre longue ni gros disque
+
+      const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+      const r = Math.max(3, Math.min(bw, bh) / 2);
+      const c0 = sampleLum(gray, W, H, cx, cy, 1);                 // coeur noir
+      const w1 = avgSamples(gray, W, H, [[cx+r*0.38,cy],[cx-r*0.38,cy],[cx,cy+r*0.38],[cx,cy-r*0.38]], 1); // anneau blanc
+      const e1 = avgSamples(gray, W, H, [[cx+r*0.78,cy],[cx-r*0.78,cy],[cx,cy+r*0.78],[cx,cy-r*0.78]], 1); // bord noir
+      const bg = avgSamples(gray, W, H, [[cx+r*1.25,cy],[cx-r*1.25,cy],[cx,cy+r*1.25],[cx,cy-r*1.25]], 1); // papier blanc
+      if (c0 === null || w1 === null || e1 === null || bg === null) continue;
+
+      const coreDark = w1 - c0;
+      const edgeDark = bg - e1;
+      const ringWhite = w1 - e1;
+      if (coreDark < 18 || edgeDark < 18 || ringWhite < 8 || bg < darkLimit) continue;
+
+      out.push({x:cx, y:cy, size:(bw+bh)/2, n:5, conf:coreDark + edgeDark + ringWhite + count/3});
+    }
+  }
+  return out.sort((a,b)=>b.conf-a.conf).slice(0, 12);
+}
+
+function avgSamples(gray, W, H, pts, r=1) {
+  const vals = [];
+  for (const p of pts) {
+    const v = sampleLum(gray, W, H, p[0], p[1], r);
+    if (v !== null) vals.push(v);
+  }
+  if (vals.length < Math.ceil(pts.length * 0.75)) return null;
+  return vals.reduce((a,b)=>a+b,0) / vals.length;
+}
+
+function mergeCandidates(a, b) {
+  const out = [];
+  for (const c of a.concat(b)) {
+    const near = out.find(o => Math.hypot(o.x-c.x, o.y-c.y) < Math.max(8, Math.min(o.size||12, c.size||12) * 0.75));
+    if (near) {
+      const w1 = near.conf || near.n || 1, w2 = c.conf || c.n || 1;
+      near.x = (near.x*w1 + c.x*w2) / (w1+w2);
+      near.y = (near.y*w1 + c.y*w2) / (w1+w2);
+      near.size = ((near.size||0)*w1 + (c.size||0)*w2) / (w1+w2);
+      near.n = Math.max(near.n||1, c.n||1);
+      near.conf = Math.max(near.conf||0, c.conf||0) + 6;
+    } else {
+      out.push(Object.assign({conf: c.conf || c.n || 1}, c));
+    }
+  }
+  return out;
+}
+
 /* ================= Homographie 4 points (DLT + Gauss) ================= */
 function homography(src, dst) {
   const A = [];
@@ -232,8 +323,12 @@ function loop() {
   const bin = new Uint8Array(N);
   for (let i = 0; i < N; i++) bin[i] = gray[i] < thr ? 1 : 0;
 
-  const clusters = findBullseyes(bin, WW, WH)
-    .filter(c => c.size >= 7 && c.size <= 70 && c.n >= 3);  // filtre anti-bruit
+  const ratioCands = findBullseyes(bin, WW, WH)
+    .filter(c => c.size >= 7 && c.size <= 70 && c.n >= 2);
+  const squareCands = findSquareMarkers(bin, gray, WW, WH, thr);
+  const clusters = mergeCandidates(ratioCands, squareCands)
+    .sort((a,b) => (b.conf||0) - (a.conf||0))
+    .slice(0, 12);
 
   overlay.width = window.innerWidth * (window.devicePixelRatio||1);
   overlay.height = window.innerHeight * (window.devicePixelRatio||1);
@@ -316,7 +411,13 @@ function loop() {
 
 function onLost(msg) {
   lostCount++;
-  if (lostCount > 4) { smooth = null; badge.textContent = msg; badge.classList.remove('ok'); }
+  if (lostCount > 2) {
+    smooth = null;
+    upSign = 0;
+    badge.textContent = msg;
+    badge.classList.remove('ok');
+    foot.textContent = 'Vise la cible IMER A3 : les 4 petits carrés noirs doivent être nets et visibles.';
+  }
 }
 
 function drawWall(pose, toScr) {
