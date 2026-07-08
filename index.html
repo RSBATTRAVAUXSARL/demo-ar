@@ -13,10 +13,14 @@
   .hud b{color:#d4001a}
   .badge{margin-left:auto;padding:4px 10px;border-radius:99px;font-size:12px;font-weight:800;background:#fee2e2;color:#991b1b;white-space:nowrap}
   .badge.ok{background:#d1fae5;color:#065f46}
+  .badge.warn{background:#fef3c7;color:#92400e}
   #startBtn{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:20;padding:18px 30px;
             border:0;border-radius:14px;background:#d4001a;color:#fff;font-size:18px;font-weight:800;box-shadow:0 8px 30px rgba(0,0,0,.4)}
   .foot{position:fixed;bottom:10px;left:10px;right:10px;z-index:10;background:rgba(255,255,255,.88);
         border-radius:10px;padding:8px 11px;font-size:12px;color:#1f2328}
+  .tools{position:fixed;left:10px;right:10px;bottom:58px;z-index:11;display:flex;gap:8px;align-items:center;justify-content:center;pointer-events:auto}
+  .tools label{background:rgba(255,255,255,.92);border-radius:999px;padding:6px 9px;font-size:12px;font-weight:800;color:#1f2328;box-shadow:0 2px 10px rgba(0,0,0,.15)}
+  .tools select{border:0;background:#f3f4f6;border-radius:999px;padding:6px 8px;font-weight:800;color:#111827;max-width:132px}
 </style>
 </head>
 <body>
@@ -24,6 +28,20 @@
 <canvas id="overlay"></canvas>
 <div class="hud"><b>IMER Live</b> <span>Mur 2,00 × 2,00 m</span><span class="badge" id="badge">Recherche…</span></div>
 <button id="startBtn">Démarrer la caméra</button>
+<div class="tools">
+  <label>Pose <select id="anchorMode">
+    <option value="left" selected>Coin gauche</option>
+    <option value="center">Milieu</option>
+    <option value="right">Coin droit</option>
+    <option value="front">Devant feuille</option>
+  </select></label>
+  <label>Stab <select id="stabMode">
+    <option value="off">Off</option>
+    <option value="low">Faible</option>
+    <option value="med" selected>Moyenne</option>
+    <option value="high">Forte</option>
+  </select></label>
+</div>
 <div class="foot" id="foot">Vise la cible IMER A3 imprimée. Les 4 coins doivent être visibles et nets.</div>
 
 <script>
@@ -45,13 +63,18 @@ const overlay = document.getElementById('overlay');
 const octx = overlay.getContext('2d');
 const badge = document.getElementById('badge');
 const foot = document.getElementById('foot');
+const anchorMode = document.getElementById('anchorMode');
+const stabMode = document.getElementById('stabMode');
 const work = document.createElement('canvas');
 const wctx = work.getContext('2d', {willReadFrequently:true});
 const WW = 480;              // largeur de travail (détection)
 let smooth = null;           // coins lissés
 let lostCount = 99;
-let upSign = 0;              // sens "haut" du mur (déterminé à la 1re pose)
+let upSign = 0;              // conservé pour compat ancienne, plus critique en V4
 let fps = 0, frames = 0, lastFpsT = performance.now();
+let frameId = 0;
+let lastRender = null;       // dernière homographie valide pour stabilisation
+const STAB_FRAMES = {off:0, low:8, med:20, high:45};
 
 document.getElementById('startBtn').addEventListener('click', async () => {
   try {
@@ -301,6 +324,7 @@ function projectPt(pose, X, Y, Z) {
 function loop() {
   requestAnimationFrame(loop);
   if (video.readyState < 2) return;
+  frameId++;
   frames++;
   const now = performance.now();
   if (now - lastFpsT > 1000) { fps = frames; frames = 0; lastFpsT = now; }
@@ -342,7 +366,7 @@ function loop() {
   const ox = (sw - WW*scale)/2, oy = (sh - WH*scale)/2;
   const toScr = p => ({x: ox + p.x*scale, y: oy + p.y*scale});
 
-  if (clusters.length < 4) { onLost('Recherche… (' + clusters.length + '/4 coins)'); return; }
+  if (clusters.length < 4) { if (drawStabilized(toScr, 'Recherche… (' + clusters.length + '/4 coins)')) return; onLost('Recherche… (' + clusters.length + '/4 coins)'); return; }
 
   // Sélection robuste : on teste toutes les combinaisons et on rejette les faux positifs.
   const objC = [SPEC.corners.TL, SPEC.corners.TR, SPEC.corners.BR, SPEC.corners.BL];
@@ -370,21 +394,23 @@ function loop() {
     }
   });
 
-  if (!bestH) { onLost('Faux coins rejetés · cible non validée'); return; }
+  if (!bestH) { if (drawStabilized(toScr, 'Cible momentanément perdue')) return; onLost('Faux coins rejetés · cible non validée'); return; }
 
   // lissage temporel des coins
   const cur = bestH.ordered.map(p => [p.x, p.y]);
   if (!smooth) smooth = cur;
   else smooth = smooth.map((p,i) => [p[0]*0.55 + cur[i][0]*0.45, p[1]*0.55 + cur[i][1]*0.45]);
   const h = homography(objC, smooth);
-  if (!h) { onLost('Homographie instable'); return; }
+  if (!h) { if (drawStabilized(toScr, 'Homographie instable')) return; onLost('Homographie instable'); return; }
   lostCount = 0;
 
   const pose = poseFromH(h, WW, WH);
   const dist = Math.hypot(pose.t[0], pose.t[1], pose.t[2]) / 1000;
   badge.textContent = 'IMER ✓ · ' + dist.toFixed(2) + ' m · ' + fps + ' fps';
   badge.classList.add('ok');
+  badge.classList.remove('warn');
   foot.textContent = 'Mur 2,00 × 2,00 m · ép. 18 cm — cible validée, score ' + Math.round(bestH.q.score) + '.';
+  lastRender = {h: h.slice(), smooth: smooth.map(p => p.slice()), frame: frameId, dist, score: bestH.q.score};
 
   // sens "haut" : celui qui monte à l'écran (déterminé une fois)
   if (!upSign) {
@@ -393,7 +419,7 @@ function loop() {
     upSign = (c0 && cU && cU.y < c0.y) ? -1 : 1;
   }
 
-  drawWall(pose, toScr);
+  drawWallAnchored(h, toScr, false);
 
   // marqueurs : coins + centre virtuel reconstruit (le vide qui calcule)
   octx.lineWidth = 3;
@@ -416,51 +442,124 @@ function onLost(msg) {
     upSign = 0;
     badge.textContent = msg;
     badge.classList.remove('ok');
+    badge.classList.remove('warn');
     foot.textContent = 'Vise la cible IMER A3 : les 4 petits carrés noirs doivent être nets et visibles.';
   }
 }
 
-function drawWall(pose, toScr) {
-  const cx = SPEC.circle.center[0], cyv = SPEC.circle.center[1];
-  const L = WALL.len/2, T = WALL.th/2;
-  // le mur court le long de l'axe X de la cible, centré
-  const base = [
-    [cx-L, cyv-T], [cx+L, cyv-T], [cx+L, cyv+T], [cx-L, cyv+T]
-  ];
-  const bot = base.map(p => projectPt(pose, p[0], p[1], 0));
-  const topZ = upSign * WALL.height;   // correction : le mur monte dans le bon sens
-  const top2 = base.map(p => projectPt(pose, p[0], p[1], topZ));
-  if (bot.some(p=>!p) || top2.some(p=>!p)) return;
-  const faces = [];
-  for (let i = 0; i < 4; i++) {
-    const j = (i+1)%4;
-    faces.push({pts:[bot[i], bot[j], top2[j], top2[i]],
-                z:(bot[i].z + bot[j].z + top2[i].z + top2[j].z)/4,
-                fill:'rgba(192,132,87,' + (i%2 ? '0.80' : '0.62') + ')'});
-  }
-  faces.push({pts:top2, z:top2.reduce((a,p)=>a+p.z,0)/4, fill:'rgba(214,158,110,0.85)'});
-  faces.sort((a,b) => b.z - a.z);
-  faces.forEach(f => {
-    octx.beginPath();
-    f.pts.forEach((p,i) => { const s = toScr(p); i ? octx.lineTo(s.x, s.y) : octx.moveTo(s.x, s.y); });
-    octx.closePath();
-    octx.fillStyle = f.fill;
-    octx.strokeStyle = '#39424d';
-    octx.lineWidth = 2;
-    octx.fill(); octx.stroke();
+
+function drawStabilized(toScr, msg) {
+  const max = STAB_FRAMES[stabMode.value] ?? 0;
+  if (!lastRender || max <= 0) return false;
+  const age = frameId - lastRender.frame;
+  if (age > max) return false;
+  badge.textContent = 'IMER estimé · ' + msg;
+  badge.classList.remove('ok');
+  badge.classList.add('warn');
+  foot.textContent = 'Stabilisation ' + stabMode.options[stabMode.selectedIndex].text + ' · pose gardée ' + age + '/' + max + ' images.';
+  drawWallAnchored(lastRender.h, toScr, true);
+  drawLastMarkers(toScr, true);
+  return true;
+}
+
+function drawLastMarkers(toScr, dashed) {
+  if (!lastRender || !lastRender.smooth) return;
+  octx.save();
+  if (dashed) octx.setLineDash([8, 8]);
+  octx.lineWidth = 3;
+  octx.strokeStyle = dashed ? '#f59e0b' : '#d4001a';
+  lastRender.smooth.forEach(p => {
+    const s = toScr({x:p[0], y:p[1]});
+    octx.beginPath(); octx.arc(s.x, s.y, 12, 0, Math.PI*2); octx.stroke();
   });
-  // étiquette
-  const mid = projectPt(pose, cx, cyv, topZ);
-  if (mid) {
-    const s = toScr(mid);
-    octx.font = 'bold 16px -apple-system, Arial';
-    octx.fillStyle = '#fff';
-    octx.strokeStyle = 'rgba(0,0,0,.6)';
-    octx.lineWidth = 4;
-    octx.textAlign = 'center';
-    octx.strokeText('Mur 200 × 200 · ép. 18', s.x, s.y - 12);
-    octx.fillText('Mur 200 × 200 · ép. 18', s.x, s.y - 12);
+  octx.restore();
+}
+
+function hToScreen(h, toScr, x, y) {
+  const p = applyH(h, x, y);
+  return toScr({x:p[0], y:p[1]});
+}
+function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+function unit(v) {
+  const n = Math.hypot(v.x, v.y) || 1;
+  return {x:v.x/n, y:v.y/n};
+}
+
+function drawWallAnchored(h, toScr, estimated) {
+  const cx = SPEC.circle.center[0], cyv = SPEC.circle.center[1];
+  const L = WALL.len, T = WALL.th;
+  let x0, x1, y0, y1;
+  const mode = anchorMode.value;
+
+  // La feuille est un ANCRAGE. Le mur peut dépasser largement : on ne l'annule plus.
+  if (mode === 'center') {
+    x0 = cx - L/2; x1 = cx + L/2; y0 = cyv - T/2; y1 = cyv + T/2;
+  } else if (mode === 'right') {
+    x0 = cx - L; x1 = cx; y0 = cyv - T/2; y1 = cyv + T/2;
+  } else if (mode === 'front') {
+    x0 = cx - L/2; x1 = cx + L/2; y0 = cyv + 120; y1 = cyv + 120 + T;
+  } else { // coin gauche par défaut
+    x0 = cx; x1 = cx + L; y0 = cyv - T/2; y1 = cyv + T/2;
   }
+
+  const b0 = hToScreen(h, toScr, x0, y0);
+  const b1 = hToScreen(h, toScr, x1, y0);
+  const b2 = hToScreen(h, toScr, x1, y1);
+  const b3 = hToScreen(h, toScr, x0, y1);
+  const c0 = hToScreen(h, toScr, cx, cyv);
+  const rx = hToScreen(h, toScr, cx + 500, cyv);
+  const ry = hToScreen(h, toScr, cx, cyv + 500);
+
+  const sx = Math.hypot(rx.x-c0.x, rx.y-c0.y) / 500;
+  const sy = Math.hypot(ry.x-c0.x, ry.y-c0.y) / 500;
+  const mmToPx = clamp((sx + sy) / 2, 0.05, 2.5);
+  const heightPx = clamp(WALL.height * mmToPx * 0.72, 120, overlay.height * 0.72);
+
+  // V4 : rendu billboard stable. Le mur monte à l'écran depuis la base de la feuille.
+  // Cela évite que tout disparaisse dès qu'un point 3D part derrière la caméra.
+  const up = {x:0, y:-1};
+  const t0 = {x:b0.x + up.x*heightPx, y:b0.y + up.y*heightPx};
+  const t1 = {x:b1.x + up.x*heightPx, y:b1.y + up.y*heightPx};
+  const t2 = {x:b2.x + up.x*heightPx, y:b2.y + up.y*heightPx};
+  const t3 = {x:b3.x + up.x*heightPx, y:b3.y + up.y*heightPx};
+
+  // Face principale : côté long visible
+  drawPoly([b0,b1,t1,t0], estimated ? 'rgba(245,158,11,0.35)' : 'rgba(192,132,87,0.68)', '#374151', 2);
+  // Épaisseur / retour
+  drawPoly([b1,b2,t2,t1], estimated ? 'rgba(245,158,11,0.28)' : 'rgba(214,158,110,0.62)', '#374151', 2);
+  drawPoly([b2,b3,t3,t2], estimated ? 'rgba(245,158,11,0.22)' : 'rgba(168,111,72,0.45)', '#374151', 1.5);
+
+  // Ligne de base très visible + flèche de longueur
+  octx.save();
+  octx.lineWidth = 5;
+  octx.strokeStyle = estimated ? '#f59e0b' : '#d4001a';
+  octx.beginPath(); octx.moveTo(b0.x,b0.y); octx.lineTo(b1.x,b1.y); octx.stroke();
+  octx.setLineDash([10,8]);
+  octx.lineWidth = 2;
+  octx.strokeStyle = 'rgba(17,24,39,.75)';
+  octx.beginPath(); octx.moveTo(b0.x,b0.y); octx.lineTo(b3.x,b3.y); octx.stroke();
+  octx.restore();
+
+  const label = mode === 'left' ? 'Mur depuis coin gauche' : mode === 'right' ? 'Mur depuis coin droit' : mode === 'front' ? 'Mur devant feuille' : 'Mur centré';
+  const lx = (t0.x + t1.x)/2, ly = (t0.y + t1.y)/2 - 12;
+  octx.font = 'bold 16px -apple-system, Arial';
+  octx.textAlign = 'center';
+  octx.fillStyle = '#fff';
+  octx.strokeStyle = 'rgba(0,0,0,.65)';
+  octx.lineWidth = 5;
+  octx.strokeText(label + ' · 2,00 m', lx, ly);
+  octx.fillText(label + ' · 2,00 m', lx, ly);
+}
+
+function drawPoly(pts, fill, stroke, lw) {
+  octx.beginPath();
+  pts.forEach((p,i) => { i ? octx.lineTo(p.x,p.y) : octx.moveTo(p.x,p.y); });
+  octx.closePath();
+  octx.fillStyle = fill;
+  octx.strokeStyle = stroke;
+  octx.lineWidth = lw;
+  octx.fill();
+  octx.stroke();
 }
 
 
