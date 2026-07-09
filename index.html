@@ -28,7 +28,7 @@
 <body>
 <video id="video" playsinline muted autoplay></video>
 <canvas id="overlay"></canvas>
-<div class="hud"><b>IMER Live</b> <span>Mur forcé</span><span class="badge" id="badge">Recherche…</span></div>
+<div class="hud"><b>IMER Live</b> <span>Mur stable</span><span class="badge" id="badge">Recherche…</span></div>
 <button id="startBtn">Démarrer la caméra</button>
 <div class="tools">
   <label>Pose <select id="anchorMode">
@@ -97,6 +97,7 @@ const STAB_FRAMES = {off:0, low:8, med:20, high:45};
 // Prototype : on différencie A/B par la position image (centre le plus à gauche = A).
 let dualLast = null;
 const DUAL_MAX_AGE = 50;
+let smartWallLast = null; // V6.3: mur forcé intelligent lissé
 
 // ================= PATCH V5.6 — debug métriques =================
 let lastRejectStats = {};
@@ -958,61 +959,154 @@ function forceAnchorsFromAnyClusters(clusters) {
   return {A,B,sep};
 }
 
-function drawUltraForcedWall(clusters, toScr) {
-  // V6.2 BRUTAL DEBUG : aucune validation, aucun groupe, aucune homographie.
-  // Si 2 points orange existent, on prend les 2 marqueurs les plus éloignés à l'écran
-  // et on dessine un mur très visible entre eux.
-  if (!clusters || clusters.length < 2) return false;
-  const pts = clusters.slice(0, Math.min(12, clusters.length)).map(c => {
-    const s = toScr({x:c.x, y:c.y});
-    return {x:s.x, y:s.y, size:(c.size||18), conf:(c.conf||0)};
-  });
+function goodForceMarkers(clusters) {
+  // V6.3 : on ne garde plus les faux points de fenêtre/reflets.
+  // Les bons marqueurs IMER vus dans tes tests ont conf élevée et taille réaliste.
+  const pts = (clusters || []).filter(c => {
+    const conf = c.conf || 0;
+    const size = c.size || 0;
+    if (conf < 80) return false;
+    if (size < 8 || size > 45) return false;
+    return Number.isFinite(c.x) && Number.isFinite(c.y);
+  }).sort((a,b)=>(b.conf||0)-(a.conf||0)).slice(0, 12);
+  return pts;
+}
 
-  let A = pts[0], B = pts[1], bestD = -1;
-  for (let i=0;i<pts.length;i++) {
-    for (let j=i+1;j<pts.length;j++) {
-      const d = Math.hypot(pts[i].x-pts[j].x, pts[i].y-pts[j].y);
-      if (d > bestD) { bestD = d; A = pts[i]; B = pts[j]; }
+function kMeans2Markers(pts) {
+  if (!pts || pts.length < 2) return null;
+  // graines = deux points les plus éloignés, mais ensuite on assigne par proximité.
+  let A = pts[0], B = pts[1], best = -1;
+  for (let i=0;i<pts.length;i++) for (let j=i+1;j<pts.length;j++) {
+    const d = Math.hypot(pts[i].x-pts[j].x, pts[i].y-pts[j].y);
+    if (d > best) { best = d; A = pts[i]; B = pts[j]; }
+  }
+  let gA=[], gB=[];
+  for (let iter=0; iter<5; iter++) {
+    gA=[]; gB=[];
+    for (const p of pts) {
+      const da = Math.hypot(p.x-A.x,p.y-A.y);
+      const db = Math.hypot(p.x-B.x,p.y-B.y);
+      (da <= db ? gA : gB).push(p);
+    }
+    const cent = g => ({
+      x:g.reduce((s,p)=>s+p.x,0)/g.length,
+      y:g.reduce((s,p)=>s+p.y,0)/g.length,
+      size:g.reduce((s,p)=>s+(p.size||18),0)/g.length,
+      conf:g.reduce((s,p)=>s+(p.conf||0),0)/g.length,
+      n:g.length,
+      pts:g
+    });
+    if (!gA.length || !gB.length) break;
+    A = cent(gA); B = cent(gB);
+  }
+  if (!gA.length || !gB.length) return null;
+  const cA = {x:gA.reduce((s,p)=>s+p.x,0)/gA.length, y:gA.reduce((s,p)=>s+p.y,0)/gA.length, size:gA.reduce((s,p)=>s+(p.size||18),0)/gA.length, conf:gA.reduce((s,p)=>s+(p.conf||0),0)/gA.length, n:gA.length, pts:gA};
+  const cB = {x:gB.reduce((s,p)=>s+p.x,0)/gB.length, y:gB.reduce((s,p)=>s+p.y,0)/gB.length, size:gB.reduce((s,p)=>s+(p.size||18),0)/gB.length, conf:gB.reduce((s,p)=>s+(p.conf||0),0)/gB.length, n:gB.length, pts:gB};
+  return [cA,cB];
+}
+
+function plausibleSheetGroup(g) {
+  if (!g || g.n < 2) return false;
+  const xs=g.pts.map(p=>p.x), ys=g.pts.map(p=>p.y);
+  const w=Math.max(...xs)-Math.min(...xs);
+  const h=Math.max(...ys)-Math.min(...ys);
+  const diag=Math.hypot(w,h);
+  const avgSize=g.size || 18;
+  // 2 coins proches ou 3/4 coins d'une feuille : ni micro-groupe, ni point isolé.
+  if (diag < avgSize*3.0) return false;
+  if (diag > avgSize*22.0) return false;
+  return true;
+}
+
+function drawSmartForcedWall(clusters, toScr) {
+  const good = goodForceMarkers(clusters);
+  if (good.length < 2) return false;
+
+  let A, B, mode = 'single';
+  if (good.length >= 4) {
+    const km = kMeans2Markers(good);
+    if (km && plausibleSheetGroup(km[0]) && plausibleSheetGroup(km[1])) {
+      A = km[0]; B = km[1]; mode = '2 groupes';
     }
   }
-  if (bestD < 20) return false;
 
-  const v = {x:B.x-A.x, y:B.y-A.y};
+  if (!A || !B) {
+    // Si une seule feuille visible : prendre le centre des marqueurs fiables de cette feuille,
+    // puis dessiner un petit mur local stable au lieu d'accrocher un faux point lointain.
+    const xs=good.map(p=>p.x), ys=good.map(p=>p.y);
+    const cx=good.reduce((s,p)=>s+p.x,0)/good.length;
+    const cy=good.reduce((s,p)=>s+p.y,0)/good.length;
+    const avgSize=good.reduce((s,p)=>s+(p.size||18),0)/good.length;
+    const w=Math.max(...xs)-Math.min(...xs);
+    const h=Math.max(...ys)-Math.min(...ys);
+    if (good.length >= 3 && Math.hypot(w,h) > avgSize*4) {
+      A = {x:Math.min(...xs), y:cy, size:avgSize, n:good.length, pts:good};
+      B = {x:Math.max(...xs), y:cy, size:avgSize, n:good.length, pts:good};
+      mode = '1 feuille';
+    } else return false;
+  }
+
+  // Si on a deux groupes, impose un minimum de séparation entre les centres.
+  let sepWork = Math.hypot(B.x-A.x, B.y-A.y);
+  if (sepWork < 45) return false;
+
+  // Lissage anti-jump : si le nouveau mur saute trop, on le freine fortement.
+  let target = {A:{...A}, B:{...B}, frame:frameId, mode, count:good.length};
+  if (smartWallLast) {
+    const oldA=smartWallLast.A, oldB=smartWallLast.B;
+    const jump = (Math.hypot(target.A.x-oldA.x,target.A.y-oldA.y)+Math.hypot(target.B.x-oldB.x,target.B.y-oldB.y))/2;
+    let alpha = 0.28;
+    if (jump > 220) alpha = 0.04;
+    else if (jump > 120) alpha = 0.10;
+    else if (jump > 60) alpha = 0.18;
+    target.A.x = oldA.x*(1-alpha)+target.A.x*alpha;
+    target.A.y = oldA.y*(1-alpha)+target.A.y*alpha;
+    target.B.x = oldB.x*(1-alpha)+target.B.x*alpha;
+    target.B.y = oldB.y*(1-alpha)+target.B.y*alpha;
+    target.A.size = oldA.size*(1-alpha)+(target.A.size||oldA.size)*alpha;
+    target.B.size = oldB.size*(1-alpha)+(target.B.size||oldB.size)*alpha;
+  }
+  smartWallLast = target;
+
+  const ca = toScr({x:target.A.x, y:target.A.y});
+  const cb = toScr({x:target.B.x, y:target.B.y});
+  const v = {x:cb.x-ca.x, y:cb.y-ca.y};
+  const len = Math.hypot(v.x,v.y);
+  if (len < 30) return false;
   const dir = unit(v);
   const n = {x:-dir.y, y:dir.x};
-  const avgSize = Math.max(10, (A.size+B.size)/2 * Math.max(overlay.width/WW, overlay.height/(work.height||WH||1280)));
-  const th = clamp(avgSize * 3.0, 26, 120);
-  const hgt = clamp(avgSize * 34, 220, overlay.height * 0.82);
+  const scale = Math.max(overlay.width/WW, overlay.height/(work.height||1280));
+  const avgSize = Math.max(10, ((target.A.size||18)+(target.B.size||18))/2 * scale);
+  const th = clamp(avgSize * 2.4, 22, 85);
+  const hgt = clamp(avgSize * 24, 160, overlay.height * 0.68);
 
-  const b0={x:A.x+n.x*th/2,y:A.y+n.y*th/2};
-  const b1={x:B.x+n.x*th/2,y:B.y+n.y*th/2};
-  const b2={x:B.x-n.x*th/2,y:B.y-n.y*th/2};
-  const b3={x:A.x-n.x*th/2,y:A.y-n.y*th/2};
+  const b0={x:ca.x+n.x*th/2,y:ca.y+n.y*th/2};
+  const b1={x:cb.x+n.x*th/2,y:cb.y+n.y*th/2};
+  const b2={x:cb.x-n.x*th/2,y:cb.y-n.y*th/2};
+  const b3={x:ca.x-n.x*th/2,y:ca.y-n.y*th/2};
   const t0={x:b0.x,y:b0.y-hgt}, t1={x:b1.x,y:b1.y-hgt}, t2={x:b2.x,y:b2.y-hgt}, t3={x:b3.x,y:b3.y-hgt};
 
-  // Ombre de chantier très visible
-  drawPoly([b0,b1,t1,t0], 'rgba(255,0,0,0.38)', '#ff0000', 6);
-  drawPoly([b1,b2,t2,t1], 'rgba(255,160,0,0.36)', '#ff6600', 4);
-  drawPoly([b2,b3,t3,t2], 'rgba(255,220,0,0.22)', '#111827', 3);
+  drawPoly([b0,b1,t1,t0], 'rgba(245,158,11,0.42)', '#f59e0b', 4);
+  drawPoly([b1,b2,t2,t1], 'rgba(214,158,110,0.34)', '#92400e', 3);
+  drawPoly([b2,b3,t3,t2], 'rgba(168,111,72,0.24)', '#111827', 2);
 
   octx.save();
-  octx.lineWidth=9;
-  octx.strokeStyle='#ff0000';
-  octx.beginPath(); octx.moveTo(A.x,A.y); octx.lineTo(B.x,B.y); octx.stroke();
-  octx.fillStyle='#00ff66';
-  octx.strokeStyle='#000';
-  octx.lineWidth=4;
-  [A,B].forEach(P=>{octx.beginPath(); octx.arc(P.x,P.y,18,0,Math.PI*2); octx.fill(); octx.stroke();});
-  octx.font='900 22px -apple-system, Arial';
-  octx.textAlign='center';
-  octx.fillStyle='#fff'; octx.strokeStyle='#000'; octx.lineWidth=7;
-  const lx=(t0.x+t1.x)/2, ly=Math.max(40,(t0.y+t1.y)/2-14);
-  const txt='MUR FORCÉ V6.2';
+  octx.lineWidth=7; octx.strokeStyle='#d4001a';
+  octx.beginPath(); octx.moveTo(ca.x,ca.y); octx.lineTo(cb.x,cb.y); octx.stroke();
+  octx.fillStyle='#22c55e'; octx.strokeStyle='#000'; octx.lineWidth=4;
+  [ca,cb].forEach(P=>{octx.beginPath(); octx.arc(P.x,P.y,15,0,Math.PI*2); octx.fill(); octx.stroke();});
+  octx.font='900 18px -apple-system, Arial'; octx.textAlign='center';
+  octx.fillStyle='#fff'; octx.strokeStyle='rgba(0,0,0,.75)'; octx.lineWidth=6;
+  const txt='MUR STABLE V6.3 · '+mode+' · '+good.length+' pts';
+  const lx=(t0.x+t1.x)/2, ly=Math.max(36,(t0.y+t1.y)/2-12);
   octx.strokeText(txt,lx,ly); octx.fillText(txt,lx,ly);
   octx.restore();
   return true;
 }
 
+function drawUltraForcedWall(clusters, toScr) {
+  return drawSmartForcedWall(clusters, toScr);
+}
 /* ================= Boucle principale ================= */
 function loop() {
   requestAnimationFrame(loop);
@@ -1071,9 +1165,9 @@ function loop() {
   if (clusters.length >= 2) {
     const forcedOk = drawUltraForcedWall(clusters, toScr);
     if (forcedOk) {
-      badge.textContent = 'MUR FORCÉ V6.2 ✓ · ' + clusters.length + ' marqueurs';
+      badge.textContent = 'MUR STABLE V6.3 ✓ · ' + clusters.length + ' marqueurs';
       badge.classList.remove('ok'); badge.classList.add('warn');
-      foot.textContent = 'V6.2 BrutalForce : mur rouge affiché dès 2 marqueurs visibles.';
+      foot.textContent = 'V6.3 SmartForce : faux points filtrés + groupes lissés.';
       return;
     } else {
       badge.textContent = 'Force impossible · ' + clusters.length + ' marqueurs';
