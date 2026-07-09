@@ -28,7 +28,7 @@
 <body>
 <video id="video" playsinline muted autoplay></video>
 <canvas id="overlay"></canvas>
-<div class="hud"><b>IMER Live</b> <span>Mur 2 IMER</span><span class="badge" id="badge">Recherche…</span></div>
+<div class="hud"><b>IMER Live</b> <span>Mur forcé</span><span class="badge" id="badge">Recherche…</span></div>
 <button id="startBtn">Démarrer la caméra</button>
 <div class="tools">
   <label>Pose <select id="anchorMode">
@@ -959,39 +959,57 @@ function forceAnchorsFromAnyClusters(clusters) {
 }
 
 function drawUltraForcedWall(clusters, toScr) {
-  const ab = forceAnchorsFromAnyClusters(clusters);
-  if (!ab) return false;
-  const ca = toScr({x:ab.A.x, y:ab.A.y});
-  const cb = toScr({x:ab.B.x, y:ab.B.y});
-  const v = {x:cb.x-ca.x, y:cb.y-ca.y};
-  const len = Math.hypot(v.x,v.y);
-  if (len < 30) return false;
+  // V6.2 BRUTAL DEBUG : aucune validation, aucun groupe, aucune homographie.
+  // Si 2 points orange existent, on prend les 2 marqueurs les plus éloignés à l'écran
+  // et on dessine un mur très visible entre eux.
+  if (!clusters || clusters.length < 2) return false;
+  const pts = clusters.slice(0, Math.min(12, clusters.length)).map(c => {
+    const s = toScr({x:c.x, y:c.y});
+    return {x:s.x, y:s.y, size:(c.size||18), conf:(c.conf||0)};
+  });
+
+  let A = pts[0], B = pts[1], bestD = -1;
+  for (let i=0;i<pts.length;i++) {
+    for (let j=i+1;j<pts.length;j++) {
+      const d = Math.hypot(pts[i].x-pts[j].x, pts[i].y-pts[j].y);
+      if (d > bestD) { bestD = d; A = pts[i]; B = pts[j]; }
+    }
+  }
+  if (bestD < 20) return false;
+
+  const v = {x:B.x-A.x, y:B.y-A.y};
   const dir = unit(v);
   const n = {x:-dir.y, y:dir.x};
-  const scale = Math.max(overlay.width/WW, overlay.height/WH);
-  const mpx = clamp(((ab.A.size||18)+(ab.B.size||18))*0.5*scale, 8, 90);
-  const th = clamp(mpx*2.4, 14, 90);
-  const hgt = clamp(mpx*30, 150, overlay.height*0.72);
-  const b0={x:ca.x+n.x*th/2,y:ca.y+n.y*th/2};
-  const b1={x:cb.x+n.x*th/2,y:cb.y+n.y*th/2};
-  const b2={x:cb.x-n.x*th/2,y:cb.y-n.y*th/2};
-  const b3={x:ca.x-n.x*th/2,y:ca.y-n.y*th/2};
+  const avgSize = Math.max(10, (A.size+B.size)/2 * Math.max(overlay.width/WW, overlay.height/(work.height||WH||1280)));
+  const th = clamp(avgSize * 3.0, 26, 120);
+  const hgt = clamp(avgSize * 34, 220, overlay.height * 0.82);
+
+  const b0={x:A.x+n.x*th/2,y:A.y+n.y*th/2};
+  const b1={x:B.x+n.x*th/2,y:B.y+n.y*th/2};
+  const b2={x:B.x-n.x*th/2,y:B.y-n.y*th/2};
+  const b3={x:A.x-n.x*th/2,y:A.y-n.y*th/2};
   const t0={x:b0.x,y:b0.y-hgt}, t1={x:b1.x,y:b1.y-hgt}, t2={x:b2.x,y:b2.y-hgt}, t3={x:b3.x,y:b3.y-hgt};
-  drawPoly([b0,b1,t1,t0], 'rgba(245,158,11,0.48)', '#111827', 3);
-  drawPoly([b1,b2,t2,t1], 'rgba(245,158,11,0.32)', '#111827', 2);
-  drawPoly([b2,b3,t3,t2], 'rgba(245,158,11,0.22)', '#111827', 2);
+
+  // Ombre de chantier très visible
+  drawPoly([b0,b1,t1,t0], 'rgba(255,0,0,0.38)', '#ff0000', 6);
+  drawPoly([b1,b2,t2,t1], 'rgba(255,160,0,0.36)', '#ff6600', 4);
+  drawPoly([b2,b3,t3,t2], 'rgba(255,220,0,0.22)', '#111827', 3);
+
   octx.save();
-  octx.lineWidth=6; octx.strokeStyle='#ef4444';
-  octx.beginPath(); octx.moveTo(ca.x,ca.y); octx.lineTo(cb.x,cb.y); octx.stroke();
-  octx.setLineDash([8,8]); octx.lineWidth=3; octx.strokeStyle='#22c55e';
-  octx.beginPath(); octx.arc(ca.x,ca.y,18,0,Math.PI*2); octx.stroke();
-  octx.beginPath(); octx.arc(cb.x,cb.y,18,0,Math.PI*2); octx.stroke();
-  octx.restore();
-  octx.font='bold 17px -apple-system, Arial'; octx.textAlign='center';
-  octx.fillStyle='#fff'; octx.strokeStyle='rgba(0,0,0,.8)'; octx.lineWidth=6;
-  const lx=(t0.x+t1.x)/2, ly=(t0.y+t1.y)/2-10;
-  const txt='MUR FORCÉ · anchors '+ab.A.n+'+'+ab.B.n;
+  octx.lineWidth=9;
+  octx.strokeStyle='#ff0000';
+  octx.beginPath(); octx.moveTo(A.x,A.y); octx.lineTo(B.x,B.y); octx.stroke();
+  octx.fillStyle='#00ff66';
+  octx.strokeStyle='#000';
+  octx.lineWidth=4;
+  [A,B].forEach(P=>{octx.beginPath(); octx.arc(P.x,P.y,18,0,Math.PI*2); octx.fill(); octx.stroke();});
+  octx.font='900 22px -apple-system, Arial';
+  octx.textAlign='center';
+  octx.fillStyle='#fff'; octx.strokeStyle='#000'; octx.lineWidth=7;
+  const lx=(t0.x+t1.x)/2, ly=Math.max(40,(t0.y+t1.y)/2-14);
+  const txt='MUR FORCÉ V6.2';
   octx.strokeText(txt,lx,ly); octx.fillText(txt,lx,ly);
+  octx.restore();
   return true;
 }
 
@@ -1047,13 +1065,21 @@ function loop() {
   updateDebugPanel({vw, vh, WW, WH, avg:avgLum, min:Math.round(gmin), max:Math.round(gmax), thr, blackPct:blackN/N, ratioCount:ratioCands.length, squareCount:squareCands.length, clusterCount:clusters.length, poseCount:0, clusters});
   drawDebugCandidates(toScr, ratioCands, squareCands, clusters, []);
 
-  // V6.0 : en mode Entre 2 IMER, on force le mur immédiatement dès 2 marqueurs.
-  // Cela contourne complètement la validation de pose pour debugger le rendu.
-  if (anchorMode.value === 'between' && clusters.length >= 2 && drawUltraForcedWall(clusters, toScr)) {
-    badge.textContent = 'MUR FORCÉ ✓ · ' + clusters.length + ' marqueurs · ' + fps + ' fps';
-    badge.classList.remove('ok'); badge.classList.add('warn');
-    foot.textContent = 'V6.0 UltraForce : mur affiché depuis les marqueurs visibles, sans validation complète IMER.';
-    return;
+  // V6.1 : FORCE TOUJOURS le mur dès 2 marqueurs.
+  // Important : on ne dépend plus du select, ni de la validation IMER.
+  // Objectif debug : si les points orange existent, le mur DOIT apparaître.
+  if (clusters.length >= 2) {
+    const forcedOk = drawUltraForcedWall(clusters, toScr);
+    if (forcedOk) {
+      badge.textContent = 'MUR FORCÉ V6.2 ✓ · ' + clusters.length + ' marqueurs';
+      badge.classList.remove('ok'); badge.classList.add('warn');
+      foot.textContent = 'V6.2 BrutalForce : mur rouge affiché dès 2 marqueurs visibles.';
+      return;
+    } else {
+      badge.textContent = 'Force impossible · ' + clusters.length + ' marqueurs';
+      badge.classList.remove('ok'); badge.classList.add('warn');
+      foot.textContent = 'ForceAlways : marqueurs trouvés mais géométrie impossible, regarde distances/positions.';
+    }
   }
 
   if (clusters.length < 4) {
